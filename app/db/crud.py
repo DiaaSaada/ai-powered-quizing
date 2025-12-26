@@ -1,0 +1,363 @@
+"""
+CRUD operations for MongoDB collections.
+Provides async database operations for courses, questions, and progress.
+"""
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from app.db.connection import MongoDB
+from app.db.models import CourseDocument, QuestionDocument, UserProgressDocument
+from app.models.course import Chapter
+
+
+# Collection names
+COURSES_COLLECTION = "courses"
+QUESTIONS_COLLECTION = "questions"
+PROGRESS_COLLECTION = "user_progress"
+
+
+# =============================================================================
+# Course Operations
+# =============================================================================
+
+async def save_course(
+    topic: str,
+    difficulty: str,
+    chapters: List[Chapter],
+    provider: str
+) -> Optional[str]:
+    """
+    Save a generated course to the database.
+
+    Args:
+        topic: The course topic
+        difficulty: Difficulty level
+        chapters: List of Chapter objects
+        provider: AI provider used
+
+    Returns:
+        Inserted document ID or None if DB not connected
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    # Normalize topic for consistent lookups
+    normalized_topic = topic.lower().strip()
+
+    # Convert chapters to dicts
+    chapters_data = [chapter.model_dump() for chapter in chapters]
+
+    document = {
+        "topic": normalized_topic,
+        "original_topic": topic,
+        "difficulty": difficulty,
+        "chapters": chapters_data,
+        "provider": provider,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+
+    # Upsert: update if exists, insert if not
+    result = await db[COURSES_COLLECTION].update_one(
+        {"topic": normalized_topic, "difficulty": difficulty},
+        {"$set": document},
+        upsert=True
+    )
+
+    return str(result.upserted_id) if result.upserted_id else "updated"
+
+
+async def get_course_by_topic(
+    topic: str,
+    difficulty: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Get a cached course by topic and difficulty.
+
+    Args:
+        topic: The course topic
+        difficulty: Difficulty level
+
+    Returns:
+        Course document or None if not found
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    normalized_topic = topic.lower().strip()
+
+    course = await db[COURSES_COLLECTION].find_one({
+        "topic": normalized_topic,
+        "difficulty": difficulty
+    })
+
+    return course
+
+
+async def get_all_courses() -> List[Dict[str, Any]]:
+    """
+    Get all cached courses.
+
+    Returns:
+        List of course documents
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return []
+
+    cursor = db[COURSES_COLLECTION].find({})
+    courses = await cursor.to_list(length=100)
+
+    return courses
+
+
+# =============================================================================
+# Question Operations
+# =============================================================================
+
+async def save_questions(
+    course_topic: str,
+    difficulty: str,
+    chapter_number: int,
+    chapter_title: str,
+    mcq: List[Dict[str, Any]],
+    true_false: List[Dict[str, Any]],
+    provider: str
+) -> Optional[str]:
+    """
+    Save generated questions to the database.
+
+    Args:
+        course_topic: The course topic
+        difficulty: Course difficulty level
+        chapter_number: Chapter number
+        chapter_title: Chapter title
+        mcq: Multiple choice questions
+        true_false: True/False questions
+        provider: AI provider used
+
+    Returns:
+        Inserted document ID or None if DB not connected
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    normalized_topic = course_topic.lower().strip()
+
+    document = {
+        "course_topic": normalized_topic,
+        "difficulty": difficulty,
+        "chapter_number": chapter_number,
+        "chapter_title": chapter_title,
+        "mcq": mcq,
+        "true_false": true_false,
+        "provider": provider,
+        "created_at": datetime.utcnow()
+    }
+
+    # Upsert: update if exists, insert if not
+    result = await db[QUESTIONS_COLLECTION].update_one(
+        {
+            "course_topic": normalized_topic,
+            "difficulty": difficulty,
+            "chapter_number": chapter_number
+        },
+        {"$set": document},
+        upsert=True
+    )
+
+    return str(result.upserted_id) if result.upserted_id else "updated"
+
+
+async def get_questions(
+    course_topic: str,
+    difficulty: str,
+    chapter_number: int
+) -> Optional[Dict[str, Any]]:
+    """
+    Get cached questions for a chapter.
+
+    Args:
+        course_topic: The course topic
+        difficulty: Course difficulty level
+        chapter_number: Chapter number
+
+    Returns:
+        Questions document or None if not found
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    normalized_topic = course_topic.lower().strip()
+
+    questions = await db[QUESTIONS_COLLECTION].find_one({
+        "course_topic": normalized_topic,
+        "difficulty": difficulty,
+        "chapter_number": chapter_number
+    })
+
+    return questions
+
+
+# =============================================================================
+# User Progress Operations
+# =============================================================================
+
+async def update_progress(
+    user_id: str,
+    course_topic: str,
+    difficulty: str,
+    chapter_number: int,
+    answer: Dict[str, Any],
+    is_correct: bool
+) -> Optional[str]:
+    """
+    Update user progress with a new answer.
+
+    Args:
+        user_id: User identifier
+        course_topic: The course topic
+        difficulty: Course difficulty level
+        chapter_number: Chapter number
+        answer: Answer data (question_id, user_answer, etc.)
+        is_correct: Whether the answer was correct
+
+    Returns:
+        Document ID or None if DB not connected
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    normalized_topic = course_topic.lower().strip()
+    now = datetime.utcnow()
+
+    # Add correctness to the answer
+    answer["is_correct"] = is_correct
+
+    # Find existing progress
+    existing = await db[PROGRESS_COLLECTION].find_one({
+        "user_id": user_id,
+        "course_topic": normalized_topic,
+        "difficulty": difficulty,
+        "chapter_number": chapter_number
+    })
+
+    if existing:
+        # Update existing progress
+        new_correct = existing.get("correct_answers", 0) + (1 if is_correct else 0)
+        new_total = existing.get("total_questions", 0) + 1
+        new_score = new_correct / new_total if new_total > 0 else 0.0
+
+        await db[PROGRESS_COLLECTION].update_one(
+            {"_id": existing["_id"]},
+            {
+                "$push": {"answers": answer},
+                "$set": {
+                    "correct_answers": new_correct,
+                    "total_questions": new_total,
+                    "score": new_score,
+                    "updated_at": now
+                }
+            }
+        )
+        return str(existing["_id"])
+    else:
+        # Create new progress document
+        document = {
+            "user_id": user_id,
+            "course_topic": normalized_topic,
+            "difficulty": difficulty,
+            "chapter_number": chapter_number,
+            "answers": [answer],
+            "score": 1.0 if is_correct else 0.0,
+            "total_questions": 1,
+            "correct_answers": 1 if is_correct else 0,
+            "completed": False,
+            "started_at": now,
+            "completed_at": None,
+            "updated_at": now
+        }
+
+        result = await db[PROGRESS_COLLECTION].insert_one(document)
+        return str(result.inserted_id)
+
+
+async def get_user_progress(
+    user_id: str,
+    course_topic: Optional[str] = None,
+    difficulty: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Get user progress, optionally filtered by course.
+
+    Args:
+        user_id: User identifier
+        course_topic: Optional topic filter
+        difficulty: Optional difficulty filter
+
+    Returns:
+        List of progress documents
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return []
+
+    query = {"user_id": user_id}
+
+    if course_topic:
+        query["course_topic"] = course_topic.lower().strip()
+    if difficulty:
+        query["difficulty"] = difficulty
+
+    cursor = db[PROGRESS_COLLECTION].find(query)
+    progress = await cursor.to_list(length=100)
+
+    return progress
+
+
+async def mark_chapter_complete(
+    user_id: str,
+    course_topic: str,
+    difficulty: str,
+    chapter_number: int
+) -> bool:
+    """
+    Mark a chapter as completed for a user.
+
+    Args:
+        user_id: User identifier
+        course_topic: The course topic
+        difficulty: Course difficulty level
+        chapter_number: Chapter number
+
+    Returns:
+        True if updated, False otherwise
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return False
+
+    normalized_topic = course_topic.lower().strip()
+    now = datetime.utcnow()
+
+    result = await db[PROGRESS_COLLECTION].update_one(
+        {
+            "user_id": user_id,
+            "course_topic": normalized_topic,
+            "difficulty": difficulty,
+            "chapter_number": chapter_number
+        },
+        {
+            "$set": {
+                "completed": True,
+                "completed_at": now,
+                "updated_at": now
+            }
+        }
+    )
+
+    return result.modified_count > 0

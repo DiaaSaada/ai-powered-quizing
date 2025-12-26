@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import os
 
 from app.config import settings
+from app.db.connection import MongoDB
 
 
 # Create uploads directory if it doesn't exist
@@ -22,23 +23,26 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     print("\n" + "="*70)
-    print(f"🚀 Starting {settings.app_name} v{settings.app_version}")
+    print(f"Starting {settings.app_name} v{settings.app_version}")
     print("="*70)
-    print(f"📁 Upload directory: {settings.upload_dir}")
-    print(f"🗄️  Database: {settings.mongodb_db_name}")
-    print(f"\n🤖 AI Configuration:")
+    print(f"   Upload directory: {settings.upload_dir}")
+    print(f"   Database: {settings.mongodb_db_name}")
+
+    # Connect to MongoDB
+    await MongoDB.connect()
+
+    print(f"\n   AI Configuration:")
     print(f"   Provider: {settings.default_ai_provider}")
     print(f"   Chapter Gen: {settings.model_chapter_generation}")
     print(f"   Question Gen: {settings.model_question_generation}")
     print(f"   Answer Check: {settings.model_answer_checking}")
     print("="*70 + "\n")
-    
-    # Here we'll add database connection later
-    
+
     yield
-    
+
     # Shutdown
-    print(f"👋 Shutting down {settings.app_name}")
+    await MongoDB.disconnect()
+    print(f"Shutting down {settings.app_name}")
 
 
 # Initialize FastAPI app
@@ -75,7 +79,8 @@ async def health_check():
     return {
         "status": "healthy",
         "app_name": settings.app_name,
-        "version": settings.app_version
+        "version": settings.app_version,
+        "database": "connected" if MongoDB.is_connected() else "disconnected"
     }
 
 
