@@ -5,8 +5,8 @@ Implements BaseAIService interface.
 """
 from typing import List, Dict, Any
 import json
-from anthropic import Anthropic, AsyncAnthropic
-from app.models.course import Chapter
+from anthropic import AsyncAnthropic
+from app.models.course import Chapter, CourseConfig
 from app.services.base_ai_service import BaseAIService
 from app.config import settings
 
@@ -27,34 +27,60 @@ class ClaudeAIService(BaseAIService):
         self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.default_model = model or settings.model_chapter_generation
     
-    async def generate_chapters(self, topic: str, difficulty: str = "intermediate", content: str = "") -> List[Chapter]:
+    async def generate_chapters(
+        self,
+        topic: str,
+        config: CourseConfig,
+        content: str = ""
+    ) -> List[Chapter]:
         """
         Generate chapters using Claude AI.
 
         Args:
             topic: The subject/topic for the course
-            difficulty: Difficulty level for all chapters (beginner/intermediate/advanced)
+            config: CourseConfig with chapter count, difficulty, depth, and time settings
             content: Optional document content to analyze
 
         Returns:
             List of Chapter objects
         """
+        # Extract config values
+        num_chapters = config.recommended_chapters
+        difficulty = config.difficulty
+        depth = config.chapter_depth
+        time_per_chapter = config.time_per_chapter_minutes
+
+        # Depth descriptions for the prompt
+        depth_instructions = {
+            "overview": "Provide a high-level overview with key points. Keep summaries brief and focus on main ideas.",
+            "detailed": "Provide thorough coverage with explanations and examples. Include practical applications.",
+            "comprehensive": "Provide in-depth, expert-level content. Include advanced concepts, nuances, and real-world case studies."
+        }
+        depth_instruction = depth_instructions.get(depth, depth_instructions["detailed"])
+
         # Build the prompt
         if content:
             prompt = f"""You are an expert educational content creator.
 
-Given this document about {topic}, break it down into logical chapters.
-All chapters must be at the "{difficulty}" difficulty level.
+Given this document about {topic}, break it down into exactly {num_chapters} logical chapters.
+
+Course Configuration:
+- Difficulty Level: {difficulty}
+- Content Depth: {depth}
+- Time per Chapter: approximately {time_per_chapter} minutes of study
+
+{depth_instruction}
 
 Document content:
 {content}
 
 For each chapter, provide:
-1. Chapter number
+1. Chapter number (1 to {num_chapters})
 2. Title (concise, clear)
-3. Summary (2-3 sentences)
-4. Key concepts (list of 3-5 main ideas)
-5. Difficulty: always set to "{difficulty}"
+3. Summary (2-3 sentences appropriate for {depth} depth)
+4. Key concepts (3-5 main ideas)
+5. Difficulty: "{difficulty}"
+6. Estimated time in minutes: {time_per_chapter}
 
 Return ONLY valid JSON in this format:
 {{
@@ -64,24 +90,32 @@ Return ONLY valid JSON in this format:
       "title": "...",
       "summary": "...",
       "key_concepts": [...],
-      "difficulty": "{difficulty}"
+      "difficulty": "{difficulty}",
+      "estimated_time_minutes": {time_per_chapter}
     }}
   ]
 }}"""
         else:
             prompt = f"""You are an expert educational content creator.
 
-Create a structured course about {topic} with logical chapters.
-All chapters must be at the "{difficulty}" difficulty level.
+Create a structured course about {topic} with exactly {num_chapters} chapters.
+
+Course Configuration:
+- Difficulty Level: {difficulty}
+- Content Depth: {depth}
+- Time per Chapter: approximately {time_per_chapter} minutes of study
+
+{depth_instruction}
 
 For each chapter, provide:
-1. Chapter number
+1. Chapter number (1 to {num_chapters})
 2. Title (concise, clear)
-3. Summary (2-3 sentences)
-4. Key concepts (list of 3-5 main ideas)
-5. Difficulty: always set to "{difficulty}"
+3. Summary (2-3 sentences appropriate for {depth} depth)
+4. Key concepts (3-5 main ideas)
+5. Difficulty: "{difficulty}"
+6. Estimated time in minutes: {time_per_chapter}
 
-Create 4-6 chapters that progressively build knowledge, all at the {difficulty} level.
+Create chapters that progressively build knowledge from foundational to more advanced within the {difficulty} level.
 
 Return ONLY valid JSON in this format:
 {{
@@ -91,11 +125,12 @@ Return ONLY valid JSON in this format:
       "title": "...",
       "summary": "...",
       "key_concepts": [...],
-      "difficulty": "{difficulty}"
+      "difficulty": "{difficulty}",
+      "estimated_time_minutes": {time_per_chapter}
     }}
   ]
 }}"""
-        
+
         # Call Claude API
         response = await self.client.messages.create(
             model=self.default_model,
@@ -103,23 +138,23 @@ Return ONLY valid JSON in this format:
             temperature=settings.temperature,
             messages=[{"role": "user", "content": prompt}]
         )
-        
+
         # Parse response
         response_text = response.content[0].text
-        
+
         # Extract JSON from response (handle markdown code blocks)
         json_text = response_text
         if "```json" in response_text:
             json_text = response_text.split("```json")[1].split("```")[0].strip()
         elif "```" in response_text:
             json_text = response_text.split("```")[1].split("```")[0].strip()
-        
+
         # Parse JSON
         data = json.loads(json_text)
-        
+
         # Convert to Chapter objects
         chapters = [Chapter(**chapter) for chapter in data["chapters"]]
-        
+
         return chapters
     
     async def generate_questions(

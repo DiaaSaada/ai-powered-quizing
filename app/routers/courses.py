@@ -4,10 +4,16 @@ Handles all course-related endpoints with configurable AI providers.
 """
 from fastapi import APIRouter, HTTPException, status, Query
 from typing import Optional
-from app.models.course import GenerateCourseRequest, GenerateCourseResponse, Chapter
+from app.models.course import (
+    GenerateCourseRequest,
+    GenerateCourseResponse,
+    Chapter,
+    CourseConfig
+)
 from app.models.validation import TopicValidationResult
 from app.services.ai_service_factory import AIServiceFactory
 from app.services.topic_validator import get_topic_validator
+from app.services.course_configurator import get_course_configurator
 from app.config import UseCase
 from app.db import crud
 
@@ -20,40 +26,36 @@ router = APIRouter()
     response_model=GenerateCourseResponse,
     status_code=status.HTTP_200_OK,
     summary="Generate course chapters from a topic",
-    description="Takes a topic as input and generates a structured course with multiple chapters. Supports multiple AI providers."
+    description="Takes a topic and difficulty as input, validates the topic, configures optimal course structure, and generates chapters using AI."
 )
 async def generate_course(
     request: GenerateCourseRequest,
     provider: Optional[str] = Query(
-        None, 
+        None,
         description="AI provider to use: 'claude', 'openai', or 'mock'. If not specified, uses default from config."
     )
 ):
     """
     Generate a course with chapters based on the provided topic and difficulty.
 
+    Flow:
+    1. Validate topic using TopicValidator (unless skip_validation=True)
+    2. Get optimal course configuration from CourseConfigurator
+    3. Check cache for existing course
+    4. Generate chapters using AI with the configuration
+    5. Save to cache and return enriched response
+
     Args:
-        request: Request body containing the topic and difficulty level
+        request: Request body containing topic, difficulty, and skip_validation flag
         provider: Optional AI provider override (claude/openai/mock)
 
     Returns:
-        GenerateCourseResponse with generated chapters
+        GenerateCourseResponse with chapters and study time estimates
 
     Raises:
-        HTTPException: If topic is invalid or generation fails
-
-    Examples:
-        # Use default provider with beginner difficulty
-        POST /api/v1/courses/generate
-        {"topic": "Project Management", "difficulty": "beginner"}
-
-        # Force use of mock provider with advanced difficulty
-        POST /api/v1/courses/generate?provider=mock
-        {"topic": "Project Management", "difficulty": "advanced"}
-
-        # Use Claude with intermediate difficulty (default)
-        POST /api/v1/courses/generate?provider=claude
-        {"topic": "Project Management"}
+        HTTPException 400: If topic is rejected (too broad, inappropriate, etc.)
+        HTTPException 422: If topic needs clarification
+        HTTPException 500: If generation fails
     """
     try:
         # Validate topic is not empty
@@ -63,57 +65,80 @@ async def generate_course(
                 detail="Topic cannot be empty"
             )
 
-        # Step 1: Validate topic using TopicValidator
-        validator = get_topic_validator()
-        validation_result = await validator.validate(request.topic)
+        complexity_score = None
 
-        if validation_result.status == "rejected":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "topic_rejected",
-                    "reason": validation_result.reason,
-                    "message": validation_result.message,
-                    "suggestions": validation_result.suggestions
-                }
-            )
+        # Step 1: Validate topic (unless skipped for testing)
+        if not request.skip_validation:
+            validator = get_topic_validator()
+            validation_result = await validator.validate(request.topic)
 
-        if validation_result.status == "needs_clarification":
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "error": "topic_needs_clarification",
-                    "reason": validation_result.reason,
-                    "message": validation_result.message,
-                    "suggestions": validation_result.suggestions
-                }
-            )
+            if validation_result.status == "rejected":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": "topic_rejected",
+                        "reason": validation_result.reason,
+                        "message": validation_result.message,
+                        "suggestions": validation_result.suggestions
+                    }
+                )
 
-        # Step 2: Check cache first
+            if validation_result.status == "needs_clarification":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "topic_needs_clarification",
+                        "reason": validation_result.reason,
+                        "message": validation_result.message,
+                        "suggestions": validation_result.suggestions
+                    }
+                )
+
+            # Extract complexity score from validation
+            if validation_result.complexity:
+                complexity_score = validation_result.complexity.score
+
+        # Step 2: Get optimal course configuration
+        configurator = get_course_configurator()
+        # Use complexity score from validation, default to 5 if not available
+        config = configurator.get_config(
+            complexity_score=complexity_score or 5,
+            difficulty=request.difficulty
+        )
+
+        # Step 3: Check cache first
         cached_course = await crud.get_course_by_topic(request.topic, request.difficulty)
         if cached_course:
-            # Return cached course
+            # Return cached course with enriched response
             chapters = [Chapter(**ch) for ch in cached_course["chapters"]]
             return GenerateCourseResponse(
                 topic=cached_course["original_topic"],
+                difficulty=request.difficulty,
                 total_chapters=len(chapters),
+                estimated_study_hours=config.estimated_study_hours,
+                time_per_chapter_minutes=config.time_per_chapter_minutes,
+                complexity_score=complexity_score,
                 chapters=chapters,
+                config=config,
                 message=f"Retrieved {len(chapters)} {request.difficulty}-level chapters for '{request.topic}' from cache"
             )
 
-        # Get the appropriate AI service
+        # Step 4: Get the appropriate AI service and generate chapters
         ai_service = AIServiceFactory.get_service(
             use_case=UseCase.CHAPTER_GENERATION,
             provider_override=provider
         )
 
-        # Generate chapters with user-specified difficulty
-        chapters = await ai_service.generate_chapters(request.topic, request.difficulty)
+        # Generate chapters with configuration
+        chapters = await ai_service.generate_chapters(
+            topic=request.topic,
+            config=config
+        )
 
         # Determine which provider was actually used
         actual_provider = ai_service.get_provider_name()
 
-        # Save to cache (non-blocking, don't fail if DB is down)
+        # Step 5: Save to cache (non-blocking, don't fail if DB is down)
         await crud.save_course(
             topic=request.topic,
             difficulty=request.difficulty,
@@ -121,16 +146,21 @@ async def generate_course(
             provider=actual_provider
         )
 
-        # Create response
+        # Create enriched response
         response = GenerateCourseResponse(
             topic=request.topic,
+            difficulty=request.difficulty,
             total_chapters=len(chapters),
+            estimated_study_hours=config.estimated_study_hours,
+            time_per_chapter_minutes=config.time_per_chapter_minutes,
+            complexity_score=complexity_score,
             chapters=chapters,
+            config=config,
             message=f"Generated {len(chapters)} {request.difficulty}-level chapters for '{request.topic}' using {actual_provider}"
         )
 
         return response
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -149,7 +179,7 @@ async def generate_course(
 
 
 @router.post(
-    "/validate-topic",
+    "/validate",
     response_model=TopicValidationResult,
     status_code=status.HTTP_200_OK,
     summary="Validate a topic before course generation",
@@ -172,18 +202,29 @@ async def validate_topic(
         TopicValidationResult with status, suggestions, and complexity
 
     Examples:
-        # Valid topic
-        POST /api/v1/courses/validate-topic
+        POST /api/v1/courses/validate
         {"topic": "Python Web Development", "difficulty": "beginner"}
         -> {"status": "accepted", "complexity": {...}}
 
-        # Too broad
-        POST /api/v1/courses/validate-topic
+        POST /api/v1/courses/validate
         {"topic": "Physics", "difficulty": "beginner"}
         -> {"status": "rejected", "reason": "too_broad", "suggestions": [...]}
     """
     validator = get_topic_validator()
     return await validator.validate(request.topic)
+
+
+@router.post(
+    "/validate-topic",
+    response_model=TopicValidationResult,
+    status_code=status.HTTP_200_OK,
+    summary="Validate a topic (alias)",
+    description="Alias for /validate endpoint.",
+    include_in_schema=False  # Hide from docs, use /validate instead
+)
+async def validate_topic_alias(request: GenerateCourseRequest):
+    """Alias for /validate endpoint for backwards compatibility."""
+    return await validate_topic(request)
 
 
 @router.get(
@@ -195,22 +236,35 @@ async def validate_topic(
 async def get_provider_info():
     """
     Get information about configured AI providers.
-    
+
     Returns:
         Dictionary with provider configuration and availability
-        
-    Example Response:
-        {
-            "default_provider": "claude",
-            "available_providers": ["mock", "claude"],
-            "models": {
-                "chapter_generation": "claude-sonnet-4-20250514",
-                "question_generation": "claude-sonnet-4-20250514",
-                ...
-            }
-        }
     """
     return AIServiceFactory.get_provider_info()
+
+
+@router.get(
+    "/config-presets",
+    response_model=dict,
+    summary="Get course configuration presets",
+    description="Returns the difficulty presets used for course configuration."
+)
+async def get_config_presets():
+    """
+    Get course configuration presets for each difficulty level.
+
+    Returns:
+        Dictionary with presets for beginner, intermediate, and advanced
+    """
+    configurator = get_course_configurator()
+    return {
+        "presets": configurator.get_all_presets(),
+        "description": {
+            "beginner": "Shorter chapters with high-level overviews",
+            "intermediate": "Balanced depth with practical examples",
+            "advanced": "Comprehensive coverage with expert-level content"
+        }
+    }
 
 
 @router.get(
@@ -223,7 +277,7 @@ async def get_supported_topics():
     """
     Get list of topics that have specific mock data.
     Only relevant when using the mock provider.
-    
+
     Returns:
         Dictionary with list of supported topics
     """
@@ -232,9 +286,9 @@ async def get_supported_topics():
         use_case=UseCase.CHAPTER_GENERATION,
         provider_override="mock"
     )
-    
+
     topics = mock_service.get_supported_topics()
-    
+
     return {
         "supported_topics": topics,
         "note": "These topics have specific mock data. Other topics will use generic templates. Only applies to mock provider."

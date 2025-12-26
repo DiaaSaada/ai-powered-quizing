@@ -4,8 +4,8 @@ All AI providers (Claude, OpenAI, Mock) implement this interface.
 This ensures consistent input/output regardless of provider.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
-from app.models.course import Chapter
+from typing import List, Dict, Any, Optional
+from app.models.course import Chapter, CourseConfig
 
 
 class BaseAIService(ABC):
@@ -13,15 +13,20 @@ class BaseAIService(ABC):
     Abstract base class for AI services.
     All AI providers must implement these methods with the same signature.
     """
-    
+
     @abstractmethod
-    async def generate_chapters(self, topic: str, difficulty: str = "intermediate", content: str = "") -> List[Chapter]:
+    async def generate_chapters(
+        self,
+        topic: str,
+        config: CourseConfig,
+        content: str = ""
+    ) -> List[Chapter]:
         """
-        Generate chapters for a given topic.
+        Generate chapters for a given topic using the provided configuration.
 
         Args:
             topic: The subject/topic for the course
-            difficulty: Difficulty level for all chapters (beginner/intermediate/advanced)
+            config: CourseConfig with recommended_chapters, difficulty, chapter_depth, time_per_chapter
             content: Optional document content to analyze
 
         Returns:

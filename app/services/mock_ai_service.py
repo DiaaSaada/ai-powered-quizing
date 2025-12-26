@@ -4,7 +4,7 @@ Simulates AI responses without making actual API calls.
 Implements BaseAIService interface.
 """
 from typing import List, Dict, Any
-from app.models.course import Chapter
+from app.models.course import Chapter, CourseConfig
 from app.services.base_ai_service import BaseAIService
 
 
@@ -101,13 +101,18 @@ class MockAIService(BaseAIService):
             ]
         }
     
-    async def generate_chapters(self, topic: str, difficulty: str = "intermediate", content: str = "") -> List[Chapter]:
+    async def generate_chapters(
+        self,
+        topic: str,
+        config: CourseConfig,
+        content: str = ""
+    ) -> List[Chapter]:
         """
         Generate mock chapters for a given topic.
 
         Args:
             topic: The subject/topic for the course
-            difficulty: Difficulty level for all chapters (beginner/intermediate/advanced)
+            config: CourseConfig with chapter count, difficulty, depth, and time settings
             content: Optional document content (ignored in mock)
 
         Returns:
@@ -117,16 +122,30 @@ class MockAIService(BaseAIService):
         normalized_topic = topic.lower().strip()
 
         # Get mock data for this topic, or use default
-        chapter_data = self.mock_chapters_data.get(
+        base_chapters = self.mock_chapters_data.get(
             normalized_topic,
             self.mock_chapters_data["default"]
         )
 
-        # Convert dictionaries to Chapter objects with user-specified difficulty
+        # Generate the requested number of chapters
+        num_chapters = config.recommended_chapters
         chapters = []
-        for chapter in chapter_data:
-            chapter_with_difficulty = {**chapter, "difficulty": difficulty}
-            chapters.append(Chapter(**chapter_with_difficulty))
+
+        for i in range(num_chapters):
+            # Cycle through base chapters if we need more
+            base_index = i % len(base_chapters)
+            base_chapter = base_chapters[base_index]
+
+            # Create chapter with config settings
+            chapter_data = {
+                "number": i + 1,
+                "title": base_chapter["title"] if i < len(base_chapters) else f"Chapter {i + 1}: {topic} - Part {i + 1}",
+                "summary": base_chapter["summary"],
+                "key_concepts": base_chapter["key_concepts"],
+                "difficulty": config.difficulty,
+                "estimated_time_minutes": config.time_per_chapter_minutes
+            }
+            chapters.append(Chapter(**chapter_data))
 
         return chapters
     
