@@ -21,9 +21,17 @@ async def lifespan(app: FastAPI):
     Runs on startup and shutdown.
     """
     # Startup
+    print("\n" + "="*70)
     print(f"🚀 Starting {settings.app_name} v{settings.app_version}")
+    print("="*70)
     print(f"📁 Upload directory: {settings.upload_dir}")
-    print(f"🤖 Default LLM: {settings.default_llm_model}")
+    print(f"🗄️  Database: {settings.mongodb_db_name}")
+    print(f"\n🤖 AI Configuration:")
+    print(f"   Provider: {settings.default_ai_provider}")
+    print(f"   Chapter Gen: {settings.model_chapter_generation}")
+    print(f"   Question Gen: {settings.model_question_generation}")
+    print(f"   Answer Check: {settings.model_answer_checking}")
+    print("="*70 + "\n")
     
     # Here we'll add database connection later
     
@@ -71,9 +79,11 @@ async def health_check():
     }
 
 
-# We'll add routers here later
-# app.include_router(courses.router, prefix="/api/v1", tags=["courses"])
-# app.include_router(progress.router, prefix="/api/v1", tags=["progress"])
+# Import routers
+from app.routers import courses
+
+# Include routers
+app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
 
 
 if __name__ == "__main__":
