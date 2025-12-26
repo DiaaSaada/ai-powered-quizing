@@ -50,81 +50,97 @@ class ClaudeAIService(BaseAIService):
         depth = config.chapter_depth
         time_per_chapter = config.time_per_chapter_minutes
 
-        # Depth descriptions for the prompt
-        depth_instructions = {
-            "overview": "Provide a high-level overview with key points. Keep summaries brief and focus on main ideas.",
-            "detailed": "Provide thorough coverage with explanations and examples. Include practical applications.",
-            "comprehensive": "Provide in-depth, expert-level content. Include advanced concepts, nuances, and real-world case studies."
+        # Depth descriptions
+        depth_descriptions = {
+            "overview": "surface-level concepts and key terminology",
+            "detailed": "practical depth with explanations and examples",
+            "comprehensive": "expert-level content with advanced concepts and case studies"
         }
-        depth_instruction = depth_instructions.get(depth, depth_instructions["detailed"])
+        depth_desc = depth_descriptions.get(depth, depth_descriptions["detailed"])
+
+        # Difficulty-specific guidance
+        difficulty_guidance = {
+            "beginner": "Assume no prior knowledge. Use simple language, avoid jargon, and explain all terms.",
+            "intermediate": "Assume basic familiarity with the subject. Include practical applications and some technical depth.",
+            "advanced": "Assume strong foundational knowledge. Focus on nuances, edge cases, and expert-level insights."
+        }
+        diff_guidance = difficulty_guidance.get(difficulty, difficulty_guidance["intermediate"])
 
         # Build the prompt
         if content:
-            prompt = f"""You are an expert educational content creator.
+            prompt = f"""You are an expert curriculum designer creating a {difficulty}-level course.
 
-Given this document about {topic}, break it down into exactly {num_chapters} logical chapters.
+Topic: {topic}
+Required chapters: exactly {num_chapters}
+Content depth: {depth} ({depth_desc})
+Time per chapter: {time_per_chapter} minutes
 
-Course Configuration:
-- Difficulty Level: {difficulty}
-- Content Depth: {depth}
-- Time per Chapter: approximately {time_per_chapter} minutes of study
+{diff_guidance}
 
-{depth_instruction}
+Based on this document, create exactly {num_chapters} chapters:
 
 Document content:
 {content}
 
-For each chapter, provide:
-1. Chapter number (1 to {num_chapters})
-2. Title (concise, clear)
-3. Summary (2-3 sentences appropriate for {depth} depth)
-4. Key concepts (3-5 main ideas)
-5. Difficulty: "{difficulty}"
-6. Estimated time in minutes: {time_per_chapter}
+Create chapters that:
+- Progress logically from fundamentals to more complex concepts
+- Are appropriate for {difficulty}-level learners
+- Each can be studied in approximately {time_per_chapter} minutes
+- Cover {depth}-level content
 
-Return ONLY valid JSON in this format:
+For each chapter provide:
+- number: sequential (1 to {num_chapters})
+- title: clear, descriptive title
+- summary: 2-3 sentences explaining what the learner will gain
+- key_concepts: 3-5 main ideas or skills covered
+- difficulty: "{difficulty}"
+- estimated_time_minutes: {time_per_chapter}
+
+Return ONLY valid JSON:
 {{
   "chapters": [
     {{
       "number": 1,
-      "title": "...",
-      "summary": "...",
-      "key_concepts": [...],
+      "title": "Chapter Title",
+      "summary": "What the learner will learn...",
+      "key_concepts": ["concept1", "concept2", "concept3"],
       "difficulty": "{difficulty}",
       "estimated_time_minutes": {time_per_chapter}
     }}
   ]
 }}"""
         else:
-            prompt = f"""You are an expert educational content creator.
+            prompt = f"""You are an expert curriculum designer creating a {difficulty}-level course.
 
-Create a structured course about {topic} with exactly {num_chapters} chapters.
+Topic: {topic}
+Required chapters: exactly {num_chapters}
+Content depth: {depth} ({depth_desc})
+Time per chapter: {time_per_chapter} minutes
 
-Course Configuration:
-- Difficulty Level: {difficulty}
-- Content Depth: {depth}
-- Time per Chapter: approximately {time_per_chapter} minutes of study
+{diff_guidance}
 
-{depth_instruction}
+Create exactly {num_chapters} chapters that:
+- Progress logically from fundamentals to more complex concepts
+- Are appropriate for {difficulty}-level learners
+- Each can be studied in approximately {time_per_chapter} minutes
+- Cover {depth}-level content
 
-For each chapter, provide:
-1. Chapter number (1 to {num_chapters})
-2. Title (concise, clear)
-3. Summary (2-3 sentences appropriate for {depth} depth)
-4. Key concepts (3-5 main ideas)
-5. Difficulty: "{difficulty}"
-6. Estimated time in minutes: {time_per_chapter}
+For each chapter provide:
+- number: sequential (1 to {num_chapters})
+- title: clear, descriptive title
+- summary: 2-3 sentences explaining what the learner will gain
+- key_concepts: 3-5 main ideas or skills covered
+- difficulty: "{difficulty}"
+- estimated_time_minutes: {time_per_chapter}
 
-Create chapters that progressively build knowledge from foundational to more advanced within the {difficulty} level.
-
-Return ONLY valid JSON in this format:
+Return ONLY valid JSON:
 {{
   "chapters": [
     {{
       "number": 1,
-      "title": "...",
-      "summary": "...",
-      "key_concepts": [...],
+      "title": "Chapter Title",
+      "summary": "What the learner will learn...",
+      "key_concepts": ["concept1", "concept2", "concept3"],
       "difficulty": "{difficulty}",
       "estimated_time_minutes": {time_per_chapter}
     }}

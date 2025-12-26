@@ -13,94 +13,123 @@ class MockAIService(BaseAIService):
     Mock AI service for testing and development.
     Returns predefined responses without calling external APIs.
     """
-    
+
     def __init__(self):
-        self.mock_chapters_data = {
-            "project management": [
-                {
-                    "number": 1,
-                    "title": "Introduction to Project Management",
-                    "summary": "Learn the fundamentals of project management including planning, execution, and monitoring. Understand the role of a project manager and key responsibilities.",
-                    "key_concepts": ["Project lifecycle", "Stakeholder management", "Project charter", "Scope definition"],
-                    "difficulty": "beginner"
-                },
-                {
-                    "number": 2,
-                    "title": "Project Planning and Scheduling",
-                    "summary": "Master the art of creating effective project plans, timelines, and schedules. Learn about critical path method and resource allocation.",
-                    "key_concepts": ["Work Breakdown Structure (WBS)", "Gantt charts", "Critical path", "Resource leveling"],
-                    "difficulty": "intermediate"
-                },
-                {
-                    "number": 3,
-                    "title": "Risk Management and Quality Control",
-                    "summary": "Identify, assess, and mitigate project risks. Implement quality assurance and control measures throughout the project lifecycle.",
-                    "key_concepts": ["Risk identification", "Risk mitigation strategies", "Quality metrics", "Continuous improvement"],
-                    "difficulty": "intermediate"
-                },
-                {
-                    "number": 4,
-                    "title": "Agile and Scrum Methodologies",
-                    "summary": "Explore modern agile frameworks including Scrum, Kanban, and lean principles. Learn how to implement iterative development.",
-                    "key_concepts": ["Scrum framework", "Sprint planning", "User stories", "Daily standups"],
-                    "difficulty": "advanced"
-                }
-            ],
-            "python programming": [
-                {
-                    "number": 1,
-                    "title": "Python Basics and Syntax",
-                    "summary": "Get started with Python programming. Learn variables, data types, operators, and basic control structures.",
-                    "key_concepts": ["Variables and data types", "Operators", "If-else statements", "Loops"],
-                    "difficulty": "beginner"
-                },
-                {
-                    "number": 2,
-                    "title": "Functions and Modules",
-                    "summary": "Master Python functions, parameters, return values, and how to organize code using modules and packages.",
-                    "key_concepts": ["Function definition", "Parameters and arguments", "Lambda functions", "Importing modules"],
-                    "difficulty": "beginner"
-                },
-                {
-                    "number": 3,
-                    "title": "Object-Oriented Programming",
-                    "summary": "Learn OOP concepts in Python including classes, objects, inheritance, and polymorphism.",
-                    "key_concepts": ["Classes and objects", "Inheritance", "Encapsulation", "Magic methods"],
-                    "difficulty": "intermediate"
-                },
-                {
-                    "number": 4,
-                    "title": "File Handling and Exception Management",
-                    "summary": "Work with files, handle exceptions gracefully, and implement proper error handling in your programs.",
-                    "key_concepts": ["File operations", "Try-except blocks", "Custom exceptions", "Context managers"],
-                    "difficulty": "intermediate"
-                }
-            ],
-            "default": [
-                {
-                    "number": 1,
-                    "title": "Introduction and Fundamentals",
-                    "summary": "Explore the basic concepts and foundational principles of the subject. Build a strong understanding of core terminology.",
-                    "key_concepts": ["Core concepts", "Terminology", "Historical context", "Basic principles"],
-                    "difficulty": "beginner"
-                },
-                {
-                    "number": 2,
-                    "title": "Intermediate Concepts and Applications",
-                    "summary": "Dive deeper into practical applications and real-world examples. Learn intermediate techniques and methodologies.",
-                    "key_concepts": ["Practical applications", "Case studies", "Problem-solving", "Best practices"],
-                    "difficulty": "intermediate"
-                },
-                {
-                    "number": 3,
-                    "title": "Advanced Topics and Mastery",
-                    "summary": "Master advanced concepts and expert-level techniques. Prepare for professional application of knowledge.",
-                    "key_concepts": ["Advanced techniques", "Expert strategies", "Industry standards", "Future trends"],
-                    "difficulty": "advanced"
-                }
-            ]
+        # Difficulty-specific chapter templates
+        self.difficulty_templates = {
+            "beginner": {
+                "title_prefix": "Introduction to",
+                "summary_style": "Learn the basics of {concept}. This chapter covers fundamental concepts in simple, easy-to-understand terms.",
+                "concepts_suffix": ["basics", "fundamentals", "getting started"],
+            },
+            "intermediate": {
+                "title_prefix": "Working with",
+                "summary_style": "Dive deeper into {concept} with practical examples and hands-on exercises. Apply your knowledge to real-world scenarios.",
+                "concepts_suffix": ["best practices", "practical applications", "real-world examples"],
+            },
+            "advanced": {
+                "title_prefix": "Mastering",
+                "summary_style": "Explore advanced {concept} techniques and expert-level patterns. Learn optimization strategies and edge cases.",
+                "concepts_suffix": ["advanced patterns", "optimization", "expert techniques"],
+            },
         }
-    
+
+        # Topic-specific chapter data (keyed by normalized topic)
+        self.topic_data = {
+            "project management": {
+                "subtopics": [
+                    "Project Fundamentals",
+                    "Planning and Scheduling",
+                    "Resource Management",
+                    "Risk Assessment",
+                    "Quality Control",
+                    "Agile Methodologies",
+                    "Stakeholder Communication",
+                    "Project Closure",
+                    "Leadership Skills",
+                    "Tools and Software",
+                    "Budget Management",
+                    "Team Dynamics",
+                ],
+                "concepts": [
+                    ["Project lifecycle", "Stakeholder identification", "Project charter", "Scope definition"],
+                    ["Work Breakdown Structure", "Gantt charts", "Critical path", "Milestones"],
+                    ["Resource allocation", "Team building", "Capacity planning", "Skills matrix"],
+                    ["Risk identification", "Risk mitigation", "Contingency planning", "SWOT analysis"],
+                    ["Quality metrics", "Process improvement", "KPIs", "Auditing"],
+                    ["Scrum framework", "Sprint planning", "User stories", "Retrospectives"],
+                    ["Communication plan", "Status reporting", "Meeting facilitation", "Conflict resolution"],
+                    ["Lessons learned", "Documentation", "Handover", "Post-project review"],
+                    ["Team motivation", "Decision making", "Delegation", "Mentoring"],
+                    ["MS Project", "Jira", "Trello", "Collaboration tools"],
+                    ["Cost estimation", "Budget tracking", "Variance analysis", "Financial reporting"],
+                    ["Team roles", "Collaboration", "Remote teams", "Performance management"],
+                ],
+            },
+            "python programming": {
+                "subtopics": [
+                    "Python Basics",
+                    "Data Types and Variables",
+                    "Control Flow",
+                    "Functions",
+                    "Object-Oriented Programming",
+                    "File Handling",
+                    "Error Handling",
+                    "Modules and Packages",
+                    "Data Structures",
+                    "Decorators and Generators",
+                    "Testing",
+                    "Web Development",
+                ],
+                "concepts": [
+                    ["Syntax", "Indentation", "Comments", "Print statements"],
+                    ["Strings", "Numbers", "Lists", "Dictionaries"],
+                    ["If statements", "For loops", "While loops", "Comprehensions"],
+                    ["Function definition", "Parameters", "Return values", "Lambda functions"],
+                    ["Classes", "Objects", "Inheritance", "Polymorphism"],
+                    ["Reading files", "Writing files", "CSV handling", "JSON parsing"],
+                    ["Try-except", "Custom exceptions", "Logging", "Debugging"],
+                    ["Importing", "Creating modules", "Package structure", "Virtual environments"],
+                    ["Lists", "Tuples", "Sets", "Dictionaries"],
+                    ["Decorators", "Generators", "Context managers", "Iterators"],
+                    ["Unit testing", "pytest", "Mocking", "Test coverage"],
+                    ["Flask", "FastAPI", "APIs", "Databases"],
+                ],
+            },
+        }
+
+        # Default subtopics for unknown topics
+        self.default_data = {
+            "subtopics": [
+                "Fundamentals",
+                "Core Concepts",
+                "Practical Applications",
+                "Best Practices",
+                "Tools and Techniques",
+                "Advanced Topics",
+                "Case Studies",
+                "Industry Standards",
+                "Future Trends",
+                "Professional Development",
+                "Problem Solving",
+                "Integration",
+            ],
+            "concepts": [
+                ["Basic principles", "Key terminology", "Historical background", "Core ideas"],
+                ["Main concepts", "Relationships", "Frameworks", "Models"],
+                ["Real-world use", "Examples", "Implementation", "Practical tips"],
+                ["Standards", "Guidelines", "Recommendations", "Common patterns"],
+                ["Popular tools", "Methodologies", "Workflows", "Automation"],
+                ["Complex topics", "Edge cases", "Optimization", "Scalability"],
+                ["Success stories", "Lessons learned", "Analysis", "Comparisons"],
+                ["Certifications", "Regulations", "Compliance", "Quality standards"],
+                ["Emerging trends", "Innovation", "Research", "Predictions"],
+                ["Career paths", "Skills development", "Networking", "Continuous learning"],
+                ["Analytical thinking", "Troubleshooting", "Root cause analysis", "Solutions"],
+                ["Cross-functional", "Collaboration", "Systems thinking", "Holistic approach"],
+            ],
+        }
+
     async def generate_chapters(
         self,
         topic: str,
@@ -118,51 +147,83 @@ class MockAIService(BaseAIService):
         Returns:
             List of Chapter objects
         """
-        # Normalize the topic
         normalized_topic = topic.lower().strip()
-
-        # Get mock data for this topic, or use default
-        base_chapters = self.mock_chapters_data.get(
-            normalized_topic,
-            self.mock_chapters_data["default"]
-        )
-
-        # Generate the requested number of chapters
         num_chapters = config.recommended_chapters
+        difficulty = config.difficulty
+        time_per_chapter = config.time_per_chapter_minutes
+        depth = config.chapter_depth
+
+        # Get topic-specific data or defaults
+        topic_info = self.topic_data.get(normalized_topic, self.default_data)
+        subtopics = topic_info["subtopics"]
+        all_concepts = topic_info["concepts"]
+
+        # Get difficulty template
+        template = self.difficulty_templates.get(difficulty, self.difficulty_templates["intermediate"])
+
         chapters = []
-
         for i in range(num_chapters):
-            # Cycle through base chapters if we need more
-            base_index = i % len(base_chapters)
-            base_chapter = base_chapters[base_index]
+            # Cycle through subtopics if needed
+            subtopic_index = i % len(subtopics)
+            subtopic = subtopics[subtopic_index]
 
-            # Create chapter with config settings
+            # Get concepts for this chapter
+            base_concepts = all_concepts[subtopic_index] if subtopic_index < len(all_concepts) else all_concepts[0]
+
+            # Adjust title based on difficulty
+            if difficulty == "beginner":
+                title = f"Introduction to {subtopic}"
+            elif difficulty == "advanced":
+                title = f"Advanced {subtopic}"
+            else:
+                title = f"{subtopic}"
+
+            # Add chapter number prefix for clarity
+            if i >= len(subtopics):
+                title = f"{subtopic} - Part {(i // len(subtopics)) + 1}"
+
+            # Generate summary based on difficulty and depth
+            if depth == "overview":
+                summary = f"Get a high-level overview of {subtopic.lower()}. Learn the essential concepts and terminology needed to understand this area of {topic}."
+            elif depth == "comprehensive":
+                summary = f"Master {subtopic.lower()} with in-depth coverage of advanced techniques. Explore expert-level concepts, edge cases, and professional best practices in {topic}."
+            else:  # detailed
+                summary = f"Develop practical skills in {subtopic.lower()}. This chapter covers key concepts with hands-on examples and real-world applications in {topic}."
+
+            # Adjust concepts for difficulty
+            adjusted_concepts = base_concepts[:4]  # Take first 4 base concepts
+            if difficulty == "beginner":
+                adjusted_concepts = [f"{c} basics" if "basic" not in c.lower() else c for c in adjusted_concepts[:3]]
+                adjusted_concepts.append("Getting started")
+            elif difficulty == "advanced":
+                adjusted_concepts = [f"Advanced {c.lower()}" if "advanced" not in c.lower() else c for c in adjusted_concepts]
+
             chapter_data = {
                 "number": i + 1,
-                "title": base_chapter["title"] if i < len(base_chapters) else f"Chapter {i + 1}: {topic} - Part {i + 1}",
-                "summary": base_chapter["summary"],
-                "key_concepts": base_chapter["key_concepts"],
-                "difficulty": config.difficulty,
-                "estimated_time_minutes": config.time_per_chapter_minutes
+                "title": title,
+                "summary": summary,
+                "key_concepts": adjusted_concepts,
+                "difficulty": difficulty,
+                "estimated_time_minutes": time_per_chapter
             }
             chapters.append(Chapter(**chapter_data))
 
         return chapters
-    
+
     async def generate_questions(
-        self, 
-        chapter: Chapter, 
-        num_mcq: int = 5, 
+        self,
+        chapter: Chapter,
+        num_mcq: int = 5,
         num_true_false: int = 3
     ) -> Dict[str, Any]:
         """
         Generate mock quiz questions for a chapter.
-        
+
         Args:
             chapter: The chapter object
             num_mcq: Number of multiple choice questions
             num_true_false: Number of true/false questions
-            
+
         Returns:
             Dictionary with 'mcq' and 'true_false' question arrays
         """
@@ -182,7 +243,7 @@ class MockAIService(BaseAIService):
             }
             for i in range(num_mcq)
         ]
-        
+
         true_false_questions = [
             {
                 "id": f"tf_{i+1}",
@@ -193,38 +254,38 @@ class MockAIService(BaseAIService):
             }
             for i in range(num_true_false)
         ]
-        
+
         return {
             "mcq": mcq_questions,
             "true_false": true_false_questions
         }
-    
+
     async def generate_feedback(
-        self, 
+        self,
         user_progress: Dict[str, Any],
         weak_areas: List[str]
     ) -> str:
         """
         Generate mock personalized feedback.
-        
+
         Args:
             user_progress: User's progress data
             weak_areas: Areas where student needs improvement
-            
+
         Returns:
             Feedback message as string
         """
         overall_score = user_progress.get("overall_score", 0)
-        
+
         if overall_score >= 0.8:
             tone = "Excellent work!"
         elif overall_score >= 0.6:
             tone = "Good progress!"
         else:
             tone = "Keep working hard!"
-        
+
         weak_areas_text = ", ".join(weak_areas) if weak_areas else "none identified"
-        
+
         feedback = f"""{tone} You've achieved a {overall_score:.0%} overall score.
 
 Areas needing attention: {weak_areas_text}
@@ -235,51 +296,51 @@ Recommendations:
 3. Take your time to understand the concepts
 
 You're making progress! Keep it up!"""
-        
+
         return feedback
-    
+
     async def check_answer(
-        self, 
-        question: str, 
-        user_answer: str, 
+        self,
+        question: str,
+        user_answer: str,
         correct_answer: str
     ) -> Dict[str, Any]:
         """
         Mock answer checking.
-        
+
         Args:
             question: The question text
             user_answer: User's answer
             correct_answer: The correct answer
-            
+
         Returns:
             Dictionary with 'is_correct', 'explanation', 'score'
         """
         is_correct = str(user_answer).strip().upper() == str(correct_answer).strip().upper()
-        
+
         return {
             "is_correct": is_correct,
             "explanation": f"The correct answer is {correct_answer}. {'Well done!' if is_correct else 'Keep studying!'}",
             "score": 1.0 if is_correct else 0.0
         }
-    
+
     async def answer_question(
-        self, 
-        question: str, 
+        self,
+        question: str,
         context: str
     ) -> str:
         """
         Mock RAG question answering.
-        
+
         Args:
             question: Student's question
             context: Relevant context from the material
-            
+
         Returns:
             Answer as string
         """
         return f"Based on the material, here's the answer to your question: {question}\n\n[Mock answer would be generated here using the provided context]"
-    
+
     def get_supported_topics(self) -> List[str]:
         """Get list of topics that have specific mock data."""
-        return [topic for topic in self.mock_chapters_data.keys() if topic != "default"]
+        return list(self.topic_data.keys())
