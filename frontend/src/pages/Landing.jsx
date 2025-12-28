@@ -44,7 +44,7 @@ function Landing() {
 
         {/* Footer text */}
         <p className="mt-12 text-blue-200 text-sm">
-          Powered by Claude AI
+          © 2025 Be Ready. All rights reserved.
         </p>
       </div>
     </div>
