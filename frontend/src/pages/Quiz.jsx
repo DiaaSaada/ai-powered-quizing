@@ -177,9 +177,17 @@ function Quiz() {
       {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold text-blue-600">
-            Be Ready
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/" className="text-xl font-bold text-blue-600">
+              Be Ready
+            </Link>
+            <Link
+              to="/app/progress"
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              My Progress
+            </Link>
+          </div>
           <span className="text-sm text-gray-500">
             {chapter.title}
           </span>

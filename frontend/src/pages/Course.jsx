@@ -28,12 +28,20 @@ function Course() {
           <Link to="/" className="text-xl font-bold text-blue-600">
             📚 Be Ready
           </Link>
-          <Link
-            to="/app"
-            className="text-sm text-gray-600 hover:text-gray-900"
-          >
-            ← New Course
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/app/progress"
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              My Progress
+            </Link>
+            <Link
+              to="/app"
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              New Course
+            </Link>
+          </div>
         </div>
       </header>
 
