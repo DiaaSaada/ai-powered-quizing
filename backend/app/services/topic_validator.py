@@ -9,6 +9,7 @@ from typing import Optional
 from anthropic import AsyncAnthropic
 from app.models.validation import TopicValidationResult, TopicComplexity
 from app.config import settings
+from app.utils.llm_logger import llm_logger
 
 
 # Broad single-word topics that should be rejected
@@ -262,12 +263,14 @@ Guidelines:
 - For certifications, base estimated_chapters on official exam domains"""
 
         try:
+            start_time = llm_logger.log_request(settings.model_topic_validation, prompt, "Topic Validation")
             response = await self.client.messages.create(
                 model=settings.model_topic_validation,
                 max_tokens=settings.max_tokens_validation,
                 temperature=0.3,  # Lower for consistent evaluation
                 messages=[{"role": "user", "content": prompt}]
             )
+            llm_logger.log_response(start_time, "Topic Validation")
 
             # Parse response
             response_text = response.content[0].text

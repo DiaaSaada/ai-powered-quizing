@@ -17,6 +17,7 @@ from app.models.question import (
 )
 from app.services.base_ai_service import BaseAIService
 from app.config import settings
+from app.utils.llm_logger import llm_logger
 
 
 # Audience descriptions for question generation
@@ -176,12 +177,14 @@ Return ONLY valid JSON:
 }}"""
 
         # Call Claude API
+        start_time = llm_logger.log_request(self.default_model, prompt, "Chapter Generation")
         response = await self.client.messages.create(
             model=self.default_model,
             max_tokens=settings.max_tokens_chapter,
             temperature=settings.temperature,
             messages=[{"role": "user", "content": prompt}]
         )
+        llm_logger.log_response(start_time, "Chapter Generation")
 
         # Parse response
         response_text = response.content[0].text
@@ -341,12 +344,14 @@ Return ONLY valid JSON (no markdown, no extra text):
   ]
 }}"""
 
+        start_time = llm_logger.log_request(settings.model_question_generation, prompt, "Question Generation")
         response = await self.client.messages.create(
             model=settings.model_question_generation,
             max_tokens=settings.max_tokens_question,
             temperature=0.7,
             messages=[{"role": "user", "content": prompt}]
         )
+        llm_logger.log_response(start_time, "Question Generation")
 
         # Parse response
         response_text = response.content[0].text
@@ -418,14 +423,16 @@ Provide:
 4. Readiness assessment (ready/not ready for exam)
 
 Be supportive but honest. Keep it concise (3-4 paragraphs)."""
-        
+
+        start_time = llm_logger.log_request(settings.model_student_feedback, prompt, "Student Feedback")
         response = await self.client.messages.create(
             model=settings.model_student_feedback,
             max_tokens=settings.max_tokens_feedback,
             temperature=0.8,  # Slightly higher for more personalized responses
             messages=[{"role": "user", "content": prompt}]
         )
-        
+        llm_logger.log_response(start_time, "Student Feedback")
+
         return response.content[0].text
     
     async def check_answer(
@@ -462,14 +469,16 @@ Return ONLY valid JSON:
   "explanation": "...",
   "score": 0.0-1.0
 }}"""
-        
+
+        start_time = llm_logger.log_request(settings.model_answer_checking, prompt, "Answer Checking")
         response = await self.client.messages.create(
             model=settings.model_answer_checking,
             max_tokens=settings.max_tokens_answer,
             temperature=0.3,  # Lower for more consistent evaluation
             messages=[{"role": "user", "content": prompt}]
         )
-        
+        llm_logger.log_response(start_time, "Answer Checking")
+
         # Parse response
         response_text = response.content[0].text
         
@@ -505,12 +514,14 @@ Context from the learning material:
 Student's Question: {question}
 
 Provide a clear, concise answer based on the context. If the context doesn't contain enough information, say so."""
-        
+
+        start_time = llm_logger.log_request(settings.model_rag_query, prompt, "RAG Query")
         response = await self.client.messages.create(
             model=settings.model_rag_query,
             max_tokens=settings.max_tokens_rag,
             temperature=0.7,
             messages=[{"role": "user", "content": prompt}]
         )
-        
+        llm_logger.log_response(start_time, "RAG Query")
+
         return response.content[0].text
