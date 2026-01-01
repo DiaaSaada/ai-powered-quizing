@@ -2,8 +2,8 @@
 Courses API Router
 Handles all course-related endpoints with configurable AI providers.
 """
-from fastapi import APIRouter, HTTPException, status, Query
-from typing import Optional
+from fastapi import APIRouter, HTTPException, status, Query, Depends
+from typing import Optional, List
 from app.models.course import (
     GenerateCourseRequest,
     GenerateCourseResponse,
@@ -11,6 +11,9 @@ from app.models.course import (
     CourseConfig
 )
 from app.models.validation import TopicValidationResult
+from app.models.responses import CourseSummary, MyCoursesResponse
+from app.models.user import UserInDB
+from app.dependencies.auth import get_current_user
 from app.services.ai_service_factory import AIServiceFactory
 from app.services.topic_validator import get_topic_validator
 from app.services.course_configurator import get_course_configurator
@@ -33,7 +36,8 @@ async def generate_course(
     provider: Optional[str] = Query(
         None,
         description="AI provider to use: 'claude', 'openai', or 'mock'. If not specified, uses default from config."
-    )
+    ),
+    current_user: UserInDB = Depends(get_current_user)
 ):
     """
     Generate a course with chapters based on the provided topic and difficulty.
@@ -106,24 +110,7 @@ async def generate_course(
             difficulty=request.difficulty
         )
 
-        # Step 3: Check cache first
-        cached_course = await crud.get_course_by_topic(request.topic, request.difficulty)
-        if cached_course:
-            # Return cached course with enriched response
-            chapters = [Chapter(**ch) for ch in cached_course["chapters"]]
-            return GenerateCourseResponse(
-                topic=cached_course["original_topic"],
-                difficulty=request.difficulty,
-                total_chapters=len(chapters),
-                estimated_study_hours=config.estimated_study_hours,
-                time_per_chapter_minutes=config.time_per_chapter_minutes,
-                complexity_score=complexity_score,
-                chapters=chapters,
-                config=config,
-                message=f"Retrieved {len(chapters)} {request.difficulty}-level chapters for '{request.topic}' from cache"
-            )
-
-        # Step 4: Get the appropriate AI service and generate chapters
+        # Step 3: Get the appropriate AI service and generate chapters
         ai_service = AIServiceFactory.get_service(
             use_case=UseCase.CHAPTER_GENERATION,
             provider_override=provider
@@ -138,16 +125,19 @@ async def generate_course(
         # Determine which provider was actually used
         actual_provider = ai_service.get_provider_name()
 
-        # Step 5: Save to cache (non-blocking, don't fail if DB is down)
-        await crud.save_course(
+        # Step 4: Save course for the authenticated user
+        course_id = await crud.save_course_for_user(
+            user_id=current_user.id,
             topic=request.topic,
             difficulty=request.difficulty,
+            complexity_score=complexity_score,
             chapters=chapters,
             provider=actual_provider
         )
 
-        # Create enriched response
+        # Create enriched response with course ID
         response = GenerateCourseResponse(
+            id=course_id,
             topic=request.topic,
             difficulty=request.difficulty,
             total_chapters=len(chapters),
@@ -293,3 +283,122 @@ async def get_supported_topics():
         "supported_topics": topics,
         "note": "These topics have specific mock data. Other topics will use generic templates. Only applies to mock provider."
     }
+
+
+# =============================================================================
+# User's Created Courses Endpoints
+# =============================================================================
+
+@router.get(
+    "/my-courses",
+    response_model=MyCoursesResponse,
+    summary="Get my created courses",
+    description="Returns all courses created by the authenticated user."
+)
+async def get_my_created_courses(
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get all courses created by the current user.
+
+    Returns:
+        MyCoursesResponse with list of user's courses and total count
+    """
+    courses = await crud.get_courses_by_user(current_user.id)
+
+    # Map to CourseSummary format
+    course_summaries = []
+    for course in courses:
+        summary = CourseSummary(
+            id=course.get("id", str(course.get("_id", ""))),
+            topic=course.get("original_topic", course.get("topic", "")),
+            difficulty=course.get("difficulty", "intermediate"),
+            complexity_score=course.get("complexity_score"),
+            total_chapters=course.get("total_chapters", len(course.get("chapters", []))),
+            questions_generated=False,
+            created_at=course.get("created_at")
+        )
+        course_summaries.append(summary)
+
+    return MyCoursesResponse(
+        courses=course_summaries,
+        total_count=len(course_summaries)
+    )
+
+
+@router.get(
+    "/{course_id}",
+    response_model=GenerateCourseResponse,
+    summary="Get a course by ID",
+    description="Returns a single course by its ID if owned by the authenticated user."
+)
+async def get_course(
+    course_id: str,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get a specific course by ID.
+
+    Args:
+        course_id: MongoDB ObjectId as string
+
+    Returns:
+        GenerateCourseResponse with course details
+
+    Raises:
+        HTTPException 404: If course not found or not owned by user
+    """
+    course = await crud.get_course_by_id(course_id)
+
+    if not course or course.get("user_id") != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
+    # Convert to response format
+    chapters = [Chapter(**ch) for ch in course.get("chapters", [])]
+
+    return GenerateCourseResponse(
+        id=course.get("id"),
+        topic=course.get("original_topic", course.get("topic", "")),
+        difficulty=course.get("difficulty", "intermediate"),
+        total_chapters=len(chapters),
+        estimated_study_hours=0,  # Not stored in DB
+        time_per_chapter_minutes=0,  # Not stored in DB
+        complexity_score=course.get("complexity_score"),
+        chapters=chapters,
+        message="Course retrieved successfully"
+    )
+
+
+@router.delete(
+    "/{course_id}",
+    summary="Delete a course",
+    description="Deletes a course if owned by the authenticated user."
+)
+async def delete_course(
+    course_id: str,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Delete a course by ID.
+
+    Args:
+        course_id: MongoDB ObjectId as string
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException 404: If course not found or not owned by user
+    """
+    deleted = await crud.delete_course(course_id, current_user.id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
+    return {"message": "Course deleted successfully"}

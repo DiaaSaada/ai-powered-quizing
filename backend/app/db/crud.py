@@ -147,6 +147,124 @@ async def get_courses_by_ids(course_ids: List[str]) -> List[Dict[str, Any]]:
         return []
 
 
+async def save_course_for_user(
+    user_id: str,
+    topic: str,
+    difficulty: str,
+    complexity_score: Optional[int],
+    chapters: List[Chapter],
+    provider: str
+) -> Optional[str]:
+    """
+    Save a course linked to a user.
+
+    Args:
+        user_id: The user's ID
+        topic: The course topic
+        difficulty: Difficulty level
+        complexity_score: Topic complexity score
+        chapters: List of Chapter objects
+        provider: AI provider used
+
+    Returns:
+        Inserted document ID as string, or None if DB not connected
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    # Convert chapters to dicts
+    chapters_data = [chapter.model_dump() for chapter in chapters]
+
+    document = {
+        "user_id": user_id,
+        "topic": topic.lower().strip(),
+        "original_topic": topic,
+        "difficulty": difficulty,
+        "complexity_score": complexity_score,
+        "chapters": chapters_data,
+        "total_chapters": len(chapters),
+        "provider": provider,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+
+    result = await db[COURSES_COLLECTION].insert_one(document)
+    return str(result.inserted_id)
+
+
+async def get_courses_by_user(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Get all courses for a user, ordered by created_at descending.
+
+    Args:
+        user_id: The user's ID
+
+    Returns:
+        List of course documents with id field
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return []
+
+    cursor = db[COURSES_COLLECTION].find({"user_id": user_id}).sort("created_at", -1)
+    courses = await cursor.to_list(length=100)
+
+    # Add string id field for each course
+    for course in courses:
+        course["id"] = str(course["_id"])
+
+    return courses
+
+
+async def get_course_by_id(course_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get a single course by its _id.
+
+    Args:
+        course_id: MongoDB ObjectId as string
+
+    Returns:
+        Course document with id field, or None if not found
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    try:
+        course = await db[COURSES_COLLECTION].find_one({"_id": ObjectId(course_id)})
+        if course:
+            course["id"] = str(course["_id"])
+        return course
+    except Exception:
+        return None
+
+
+async def delete_course(course_id: str, user_id: str) -> bool:
+    """
+    Delete a course if owned by the user.
+
+    Args:
+        course_id: MongoDB ObjectId as string
+        user_id: The user's ID (must own the course)
+
+    Returns:
+        True if deleted, False if not found or not owned
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return False
+
+    try:
+        result = await db[COURSES_COLLECTION].delete_one({
+            "_id": ObjectId(course_id),
+            "user_id": user_id
+        })
+        return result.deleted_count > 0
+    except Exception:
+        return False
+
+
 # =============================================================================
 # Question Operations
 # =============================================================================

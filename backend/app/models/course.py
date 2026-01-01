@@ -82,6 +82,7 @@ class CourseConfig(BaseModel):
 
 class GenerateCourseResponse(BaseModel):
     """Response model for course generation."""
+    id: Optional[str] = Field(default=None, description="Course ID (MongoDB ObjectId)")
     topic: str = Field(..., description="The topic of the course")
     difficulty: str = Field(..., description="Course difficulty level")
     total_chapters: int = Field(..., description="Total number of chapters")
