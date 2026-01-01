@@ -1,42 +1,46 @@
-# AI Learning Platform 🎓🤖
+# AI Learning Platform
 
-An AI-powered learning platform that generates adaptive quizzes and provides personalized mentoring.
+An AI-powered learning platform that generates personalized courses and quizzes from any topic.
 
 ## Features
 
-- 📄 PDF document processing and analysis
-- 📚 Automatic chapter breakdown
-- ❓ AI-generated quizzes (MCQ, True/False)
-- 📊 Progress tracking and analytics
-- 🎯 Adaptive learning recommendations
-- 💾 Smart caching to save API costs
+- **Topic Validation** - AI validates topics before course generation
+- **Course Generation** - Automatic chapter breakdown with AI
+- **Quiz Generation** - MCQ and True/False questions per chapter
+- **User Authentication** - JWT-based signup/login
+- **Progress Tracking** - Track answers and scores
+- **Course Management** - Create, view, delete user courses
+- **Auto-enrollment** - Users auto-enrolled in generated courses
+- **Multi-Provider** - Supports Claude, OpenAI, and Mock providers
+- **Smart Caching** - Save API costs with MongoDB caching
 
 ## Tech Stack
 
-- **Backend**: FastAPI (Python)
-- **Database**: MongoDB
-- **AI**: Claude/OpenAI API
-- **Vector Store**: ChromaDB
-- **Embeddings**: Sentence Transformers
+- **Backend**: FastAPI (Python 3.12)
+- **Database**: MongoDB with Motor (async)
+- **AI Providers**: Claude, OpenAI, Mock
+- **Auth**: JWT with bcrypt
+- **Frontend**: React + Vite + Tailwind CSS
 
 ## Project Structure
 
 ```
-ai-learning-platform/
-├── app/
-│   ├── __init__.py
-│   ├── main.py              # FastAPI application
-│   ├── config.py            # Configuration management
-│   ├── models/              # Pydantic models
-│   ├── services/            # Business logic
-│   ├── routers/             # API endpoints
-│   ├── db/                  # Database layer
-│   └── utils/               # Helper functions
-├── tests/                   # Test files
-├── uploads/                 # Uploaded files directory
-├── requirements.txt         # Python dependencies
-├── .env                     # Environment variables
-└── run.py                   # Application runner
+be-ready/
+├── backend/                 # FastAPI backend
+│   ├── app/
+│   │   ├── main.py          # FastAPI application
+│   │   ├── config.py        # Settings and AI config
+│   │   ├── models/          # Pydantic models
+│   │   ├── services/        # AI services, auth
+│   │   ├── routers/         # API endpoints
+│   │   ├── db/              # MongoDB operations
+│   │   └── dependencies/    # Auth dependencies
+│   ├── requirements.txt
+│   └── run.py
+├── frontend/                # React frontend
+│   ├── src/
+│   └── package.json
+└── CLAUDE.md                # This file
 ```
 
 ## Setup Instructions
@@ -107,38 +111,59 @@ Or use curl:
 curl http://localhost:8000/health
 ```
 
-## API Endpoints (Coming Soon)
+## API Endpoints
 
-- `POST /api/v1/courses/upload` - Upload PDF and generate course
-- `GET /api/v1/courses/{course_id}` - Get course details
-- `GET /api/v1/courses/{course_id}/chapters` - Get all chapters
-- `POST /api/v1/progress/answer` - Submit an answer
-- `GET /api/v1/progress/{user_id}/{course_id}` - Get user progress
-- `GET /api/v1/progress/{user_id}/{course_id}/feedback` - Get AI mentor feedback
+### Auth
+- `POST /api/v1/auth/signup` - Register new user
+- `POST /api/v1/auth/login` - Login and get JWT token
+- `GET /api/v1/auth/me` - Get current user
+
+### Courses
+- `POST /api/v1/courses/generate` - Generate course from topic (auth required)
+- `POST /api/v1/courses/validate` - Validate topic before generation
+- `GET /api/v1/courses/my-courses` - Get user's created courses
+- `GET /api/v1/courses/{id}` - Get course by ID
+- `DELETE /api/v1/courses/{id}` - Delete a course
+
+### Questions
+- `POST /api/v1/questions/generate` - Generate quiz questions
+- `POST /api/v1/questions/analyze-count` - Get recommended question count
+
+### Progress
+- `POST /api/v1/progress/submit` - Submit answer
+- `GET /api/v1/progress/` - Get user progress
+
+### My Courses (Enrolled)
+- `GET /api/v1/my-courses/` - Get enrolled courses
 
 ## Development Roadmap
 
 - [x] Project setup and configuration
-- [ ] MongoDB integration
+- [x] MongoDB integration
+- [x] Chapter generation with Claude/OpenAI
+- [x] Question generation service
+- [x] Progress tracking system
+- [x] Caching layer
+- [x] User authentication (JWT)
+- [x] Course management (CRUD)
+- [x] Auto-enrollment on generation
 - [ ] PDF processing service
-- [ ] Chapter generation with Claude
-- [ ] Question generation service
-- [ ] Progress tracking system
 - [ ] AI mentor feedback
 - [ ] RAG system for contextual help
-- [ ] Caching layer
-- [ ] User authentication
+- [ ] Gemini AI provider
+- [ ] Chapter verification with secondary LLM
 - [ ] Frontend integration
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| ANTHROPIC_API_KEY | Your Anthropic API key | Required |
+| ANTHROPIC_API_KEY | Anthropic API key | Required |
+| OPENAI_API_KEY | OpenAI API key | Optional |
+| JWT_SECRET_KEY | Secret for JWT tokens | Required |
 | MONGODB_URL | MongoDB connection URL | mongodb://localhost:27017 |
 | MONGODB_DB_NAME | Database name | ai_learning_platform |
-| MAX_UPLOAD_SIZE | Max file upload size (bytes) | 10485760 (10MB) |
-| DEFAULT_LLM_MODEL | Claude model to use | claude-sonnet-4-20250514 |
+| DEFAULT_AI_PROVIDER | AI provider (claude/openai/mock) | mock |
 
 ## Contributing
 

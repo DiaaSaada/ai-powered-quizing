@@ -24,7 +24,9 @@ be-ready/
 │   │   ├── __init__.py
 │   │   ├── course.py              # Chapter, Course, CourseConfig models
 │   │   ├── question.py            # MCQQuestion, TrueFalseQuestion, ChapterQuestions
-│   │   └── validation.py          # TopicValidationResult, TopicComplexity
+│   │   ├── validation.py          # TopicValidationResult, TopicComplexity
+│   │   ├── user.py                # User models (UserCreate, UserInDB, etc.)
+│   │   └── responses.py           # API response models (CourseSummary, MyCoursesResponse)
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── base_ai_service.py     # Abstract base class (interface)
@@ -35,16 +37,23 @@ be-ready/
 │   │   ├── topic_validator.py     # Topic validation service
 │   │   ├── course_configurator.py # Course structure configuration
 │   │   ├── question_analyzer.py   # AI-based question count analysis
-│   │   └── question_generator.py  # Question generation orchestrator
+│   │   ├── question_generator.py  # Question generation orchestrator
+│   │   └── auth_service.py        # Password hashing, JWT tokens
 │   ├── routers/
 │   │   ├── __init__.py
+│   │   ├── auth.py                # Authentication endpoints
 │   │   ├── courses.py             # Course generation endpoints
-│   │   └── questions.py           # Question generation endpoints
+│   │   ├── questions.py           # Question generation endpoints
+│   │   ├── progress.py            # Progress tracking endpoints
+│   │   └── my_courses.py          # Enrolled courses endpoints
 │   ├── db/
 │   │   ├── __init__.py
 │   │   ├── connection.py          # MongoDB connection management
 │   │   ├── models.py              # Document models
-│   │   └── crud.py                # Database operations
+│   │   ├── crud.py                # Database operations
+│   │   └── user_repository.py     # User CRUD operations
+│   ├── dependencies/
+│   │   └── auth.py                # get_current_user dependency
 │   └── utils/
 │       └── __init__.py
 ├── tests/
@@ -99,24 +108,47 @@ python scripts/check_mongodb.py --all
 ```
 
 **Collections:**
-- `courses` - Cached generated courses (by topic + difficulty)
+- `courses` - User-linked courses (by user_id, topic + difficulty)
 - `questions` - Cached generated questions (by topic + difficulty + chapter)
 - `question_batches` - Temporary batches during chunked generation
 - `user_progress` - User answer tracking
+- `users` - User accounts with enrolled_courses
 
 ## API Endpoints
 
-### Course Endpoints
+### Health Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/` | Welcome message |
 | GET | `/health` | Health check (includes DB status) |
+
+### Auth Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/auth/signup` | Register new user |
+| POST | `/api/v1/auth/login` | Login and get JWT token |
+| GET | `/api/v1/auth/me` | Get current user info (requires auth) |
+
+### Course Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | POST | `/api/v1/courses/validate` | Validate topic before generation |
-| POST | `/api/v1/courses/generate` | Generate chapters from topic |
+| POST | `/api/v1/courses/generate` | Generate chapters from topic (requires auth) |
+| GET | `/api/v1/courses/my-courses` | Get user's created courses (requires auth) |
+| GET | `/api/v1/courses/{id}` | Get course by ID (requires auth) |
+| DELETE | `/api/v1/courses/{id}` | Delete a course (requires auth) |
 | GET | `/api/v1/courses/providers` | Get AI provider config |
 | GET | `/api/v1/courses/config-presets` | Get difficulty presets |
 | GET | `/api/v1/courses/supported-topics` | Get mock data topics |
+
+### My Courses Endpoints (Enrolled)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/my-courses/` | Get enrolled courses (requires auth) |
 
 ### Question Endpoints
 
@@ -126,6 +158,13 @@ python scripts/check_mongodb.py --all
 | POST | `/api/v1/questions/analyze-count` | Get recommended question count without generating |
 | GET | `/api/v1/questions/sample` | Get sample questions (uses mock) |
 | GET | `/api/v1/questions/config` | Get question generation configuration |
+
+### Progress Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/progress/submit` | Submit answer and update progress |
+| GET | `/api/v1/progress/` | Get user's progress (requires auth) |
 
 ## Course Generation Flow
 
@@ -728,13 +767,18 @@ MONGODB_DB_NAME=ai_learning_platform
   - Caching for question count analysis
 - Comprehensive test suite (courses + questions)
 
+### Recently Completed
+- **User Authentication** - JWT auth with bcrypt password hashing
+- **Progress Tracking** - Track user answers and scores
+- **User Courses** - Save/list/delete user's courses with ownership
+- **Course Enrollment** - Auto-enroll users on course generation
+
 ### TODO
 1. **PDF Upload** - Extract text from PDFs, generate chapters
-2. **Progress Tracking** - Track user answers and scores
-3. **AI Mentor Feedback** - Personalized study recommendations
-4. **RAG System** - Vector embeddings for document Q&A
-5. **User Authentication** - JWT or session-based auth
-6. **Frontend** - React/Vue UI
+2. **AI Mentor Feedback** - Personalized study recommendations
+3. **RAG System** - Vector embeddings for document Q&A
+4. **Gemini Provider** - Add Google Gemini as AI provider
+5. **Chapter Verification** - Double-check generated chapters with secondary LLM to ensure completeness
 
 ## Code Style
 
@@ -754,11 +798,16 @@ MONGODB_DB_NAME=ai_learning_platform
 4. `app/services/course_configurator.py` - Course structure configuration
 5. `app/services/question_analyzer.py` - AI-based question count analysis
 6. `app/services/question_generator.py` - Question generation orchestration
-7. `app/routers/courses.py` - Course API endpoints
-8. `app/routers/questions.py` - Question API endpoints
-9. `app/models/course.py` - Course and Chapter models
-10. `app/models/question.py` - Question models (MCQ, T/F, ChapterQuestions)
-11. `app/models/validation.py` - Validation result models
+7. `app/services/auth_service.py` - JWT tokens and password hashing
+8. `app/routers/courses.py` - Course API endpoints
+9. `app/routers/questions.py` - Question API endpoints
+10. `app/routers/auth.py` - Authentication endpoints
+11. `app/models/course.py` - Course and Chapter models
+12. `app/models/question.py` - Question models (MCQ, T/F, ChapterQuestions)
+13. `app/models/user.py` - User models
+14. `app/models/validation.py` - Validation result models
+15. `app/dependencies/auth.py` - Authentication dependency
+16. `app/db/user_repository.py` - User database operations
 
 ## Adding a New AI Provider
 
