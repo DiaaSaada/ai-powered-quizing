@@ -18,7 +18,7 @@ from app.services.ai_service_factory import AIServiceFactory
 from app.services.topic_validator import get_topic_validator
 from app.services.course_configurator import get_course_configurator
 from app.config import UseCase
-from app.db import crud
+from app.db import crud, user_repository
 
 # Create router
 router = APIRouter()
@@ -134,6 +134,9 @@ async def generate_course(
             chapters=chapters,
             provider=actual_provider
         )
+
+        # Step 5: Auto-enroll user in the newly created course
+        await user_repository.enroll_user_in_course(current_user.id, course_id)
 
         # Create enriched response with course ID
         response = GenerateCourseResponse(
