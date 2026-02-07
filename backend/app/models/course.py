@@ -4,6 +4,28 @@ These define the structure of data we receive and send.
 """
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
+import secrets
+import re
+
+
+def generate_course_slug(topic: str, difficulty: str) -> str:
+    """
+    Generate a unique course slug like 'python-programming-beginner-a7x3k2'.
+
+    Args:
+        topic: The course topic
+        difficulty: The difficulty level (beginner, intermediate, advanced)
+
+    Returns:
+        A unique slug string
+    """
+    # Normalize topic: lowercase, replace non-alphanumeric with hyphens
+    base = re.sub(r'[^a-z0-9]+', '-', topic.lower()).strip('-')
+    # Truncate to reasonable length
+    base = base[:40]
+    # Add difficulty and random suffix (6 hex chars)
+    suffix = secrets.token_hex(3)
+    return f"{base}-{difficulty}-{suffix}"
 
 
 class GenerateCourseRequest(BaseModel):
@@ -85,6 +107,7 @@ class CourseConfig(BaseModel):
 class GenerateCourseResponse(BaseModel):
     """Response model for course generation."""
     id: Optional[str] = Field(default=None, description="Course ID (MongoDB ObjectId)")
+    slug: Optional[str] = Field(default=None, description="Unique course slug (e.g., 'python-programming-beginner-a7x3k2')")
     topic: str = Field(..., description="The topic of the course")
     difficulty: str = Field(..., description="Course difficulty level")
     category: Optional[str] = Field(default=None, description="Topic category (official_certification, college_course, high_school, etc.)")
@@ -99,6 +122,8 @@ class GenerateCourseResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
+                "id": "507f1f77bcf86cd799439011",
+                "slug": "project-management-intermediate-a7x3k2",
                 "topic": "Project Management",
                 "difficulty": "intermediate",
                 "total_chapters": 6,
@@ -132,6 +157,7 @@ class FileUploadResult(BaseModel):
 class GenerateFromFilesResponse(BaseModel):
     """Response model for file-based course generation."""
     id: Optional[str] = Field(default=None, description="Course ID (MongoDB ObjectId)")
+    slug: Optional[str] = Field(default=None, description="Unique course slug (e.g., 'study-guide-beginner-a7x3k2')")
     topic: str = Field(..., description="Course topic (provided or inferred from content)")
     difficulty: str = Field(..., description="Course difficulty level")
     category: Optional[str] = Field(default=None, description="Topic category")

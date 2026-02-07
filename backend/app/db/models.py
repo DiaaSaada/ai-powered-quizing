@@ -21,6 +21,7 @@ class CourseDocument(BaseModel):
     Course document model for MongoDB.
     Stores generated courses for caching.
     """
+    slug: str = Field(..., description="Unique course slug (e.g., 'python-programming-beginner-a7x3k2')")
     topic: str = Field(..., description="Normalized topic name (lowercase)")
     original_topic: str = Field(..., description="Original topic as provided by user")
     difficulty: str = Field(..., description="Difficulty level: beginner, intermediate, advanced")
@@ -32,6 +33,7 @@ class CourseDocument(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
+                "slug": "project-management-beginner-a7x3k2",
                 "topic": "project management",
                 "original_topic": "Project Management",
                 "difficulty": "beginner",

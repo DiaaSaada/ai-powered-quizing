@@ -9,6 +9,7 @@ from datetime import datetime
 class CourseSummary(BaseModel):
     """Summary model for course card display."""
     id: str = Field(..., description="Course MongoDB ID")
+    slug: Optional[str] = Field(default=None, description="Unique course slug")
     topic: str = Field(..., description="Course topic")
     difficulty: str = Field(..., description="Difficulty level")
     complexity_score: Optional[int] = Field(default=None, description="Topic complexity score (1-10)")
@@ -20,6 +21,7 @@ class CourseSummary(BaseModel):
         json_schema_extra = {
             "example": {
                 "id": "abc-123",
+                "slug": "aws-solutions-architect-advanced-a7x3k2",
                 "topic": "AWS Solutions Architect",
                 "difficulty": "advanced",
                 "complexity_score": 8,
@@ -41,6 +43,7 @@ class MyCoursesResponse(BaseModel):
                 "courses": [
                     {
                         "id": "abc-123",
+                        "slug": "aws-solutions-architect-advanced-a7x3k2",
                         "topic": "AWS Solutions Architect",
                         "difficulty": "advanced",
                         "complexity_score": 8,

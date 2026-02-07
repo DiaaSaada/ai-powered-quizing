@@ -7,7 +7,7 @@ from datetime import datetime
 from bson import ObjectId
 from app.db.connection import MongoDB
 from app.db.models import CourseDocument, QuestionDocument, UserProgressDocument
-from app.models.course import Chapter
+from app.models.course import Chapter, generate_course_slug
 
 
 # Collection names
@@ -155,7 +155,7 @@ async def save_course_for_user(
     category: Optional[str],
     chapters: List[Chapter],
     provider: str
-) -> Optional[str]:
+) -> Optional[Dict[str, str]]:
     """
     Save a course linked to a user.
 
@@ -169,17 +169,21 @@ async def save_course_for_user(
         provider: AI provider used
 
     Returns:
-        Inserted document ID as string, or None if DB not connected
+        Dict with 'id' and 'slug', or None if DB not connected
     """
     db = MongoDB.get_db()
     if db is None:
         return None
+
+    # Generate unique slug
+    slug = generate_course_slug(topic, difficulty)
 
     # Convert chapters to dicts
     chapters_data = [chapter.model_dump() for chapter in chapters]
 
     document = {
         "user_id": user_id,
+        "slug": slug,
         "topic": topic.lower().strip(),
         "original_topic": topic,
         "difficulty": difficulty,
@@ -193,7 +197,7 @@ async def save_course_for_user(
     }
 
     result = await db[COURSES_COLLECTION].insert_one(document)
-    return str(result.inserted_id)
+    return {"id": str(result.inserted_id), "slug": slug}
 
 
 async def save_course_from_files(
@@ -205,7 +209,7 @@ async def save_course_from_files(
     chapters: List[Chapter],
     provider: str,
     source_files: List[Dict[str, Any]]
-) -> Optional[str]:
+) -> Optional[Dict[str, str]]:
     """
     Save a course generated from uploaded files.
 
@@ -220,17 +224,21 @@ async def save_course_from_files(
         source_files: List of file metadata dicts
 
     Returns:
-        Inserted document ID as string, or None if DB not connected
+        Dict with 'id' and 'slug', or None if DB not connected
     """
     db = MongoDB.get_db()
     if db is None:
         return None
+
+    # Generate unique slug
+    slug = generate_course_slug(topic, difficulty)
 
     # Convert chapters to dicts
     chapters_data = [chapter.model_dump() for chapter in chapters]
 
     document = {
         "user_id": user_id,
+        "slug": slug,
         "topic": topic.lower().strip(),
         "original_topic": topic,
         "difficulty": difficulty,
@@ -246,7 +254,7 @@ async def save_course_from_files(
     }
 
     result = await db[COURSES_COLLECTION].insert_one(document)
-    return str(result.inserted_id)
+    return {"id": str(result.inserted_id), "slug": slug}
 
 
 async def get_courses_by_user(user_id: str) -> List[Dict[str, Any]]:
@@ -289,6 +297,29 @@ async def get_course_by_id(course_id: str) -> Optional[Dict[str, Any]]:
 
     try:
         course = await db[COURSES_COLLECTION].find_one({"_id": ObjectId(course_id)})
+        if course:
+            course["id"] = str(course["_id"])
+        return course
+    except Exception:
+        return None
+
+
+async def get_course_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+    """
+    Get a single course by its unique slug.
+
+    Args:
+        slug: Unique course slug (e.g., 'python-programming-beginner-a7x3k2')
+
+    Returns:
+        Course document with id field, or None if not found
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    try:
+        course = await db[COURSES_COLLECTION].find_one({"slug": slug})
         if course:
             course["id"] = str(course["_id"])
         return course

@@ -145,7 +145,7 @@ async def generate_course(
         actual_provider = ai_service.get_provider_name()
 
         # Step 4: Save course for the authenticated user
-        course_id = await crud.save_course_for_user(
+        course_result = await crud.save_course_for_user(
             user_id=current_user.id,
             topic=request.topic,
             difficulty=request.difficulty,
@@ -155,12 +155,16 @@ async def generate_course(
             provider=actual_provider
         )
 
+        course_id = course_result["id"] if course_result else None
+        course_slug = course_result["slug"] if course_result else None
+
         # Step 5: Auto-enroll user in the newly created course
         await user_repository.enroll_user_in_course(current_user.id, course_id)
 
-        # Create enriched response with course ID
+        # Create enriched response with course ID and slug
         response = GenerateCourseResponse(
             id=course_id,
+            slug=course_slug,
             topic=request.topic,
             difficulty=request.difficulty,
             category=category,
@@ -399,7 +403,7 @@ async def generate_course_from_files(
         ]
 
         # Save course
-        course_id = await crud.save_course_from_files(
+        course_result = await crud.save_course_from_files(
             user_id=current_user.id,
             topic=inferred_topic,
             difficulty=difficulty,
@@ -409,6 +413,9 @@ async def generate_course_from_files(
             provider=actual_provider,
             source_files=source_files_meta
         )
+
+        course_id = course_result["id"] if course_result else None
+        course_slug = course_result["slug"] if course_result else None
 
         # Auto-enroll user
         if course_id:
@@ -428,6 +435,7 @@ async def generate_course_from_files(
 
         return GenerateFromFilesResponse(
             id=course_id,
+            slug=course_slug,
             topic=inferred_topic,
             difficulty=difficulty,
             total_chapters=len(chapters),
@@ -759,7 +767,7 @@ async def generate_from_confirmed_outline(
         source_files_meta = analysis.get("source_files", [])
 
         # Save course
-        course_id = await crud.save_course_from_files(
+        course_result = await crud.save_course_from_files(
             user_id=current_user.id,
             topic=topic,
             difficulty=request.difficulty,
@@ -769,6 +777,9 @@ async def generate_from_confirmed_outline(
             provider=actual_provider,
             source_files=source_files_meta
         )
+
+        course_id = course_result["id"] if course_result else None
+        course_slug = course_result["slug"] if course_result else None
 
         # Auto-enroll user
         if course_id:
@@ -791,6 +802,7 @@ async def generate_from_confirmed_outline(
 
         return GenerateFromFilesResponse(
             id=course_id,
+            slug=course_slug,
             topic=topic,
             difficulty=request.difficulty,
             total_chapters=len(chapters),
@@ -907,6 +919,7 @@ async def get_my_created_courses(
     for course in courses:
         summary = CourseSummary(
             id=course.get("id", str(course.get("_id", ""))),
+            slug=course.get("slug"),
             topic=course.get("original_topic", course.get("topic", "")),
             difficulty=course.get("difficulty", "intermediate"),
             complexity_score=course.get("complexity_score"),
@@ -957,6 +970,55 @@ async def get_course(
 
     return GenerateCourseResponse(
         id=course.get("id"),
+        slug=course.get("slug"),
+        topic=course.get("original_topic", course.get("topic", "")),
+        difficulty=course.get("difficulty", "intermediate"),
+        category=course.get("category"),
+        total_chapters=len(chapters),
+        estimated_study_hours=0,  # Not stored in DB
+        time_per_chapter_minutes=0,  # Not stored in DB
+        complexity_score=course.get("complexity_score"),
+        chapters=chapters,
+        message="Course retrieved successfully"
+    )
+
+
+@router.get(
+    "/by-slug/{slug}",
+    response_model=GenerateCourseResponse,
+    summary="Get a course by slug",
+    description="Returns a single course by its unique slug."
+)
+async def get_course_by_slug(
+    slug: str,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get a specific course by its unique slug.
+
+    Args:
+        slug: Unique course slug (e.g., 'python-programming-beginner-a7x3k2')
+
+    Returns:
+        GenerateCourseResponse with course details
+
+    Raises:
+        HTTPException 404: If course not found or not owned by user
+    """
+    course = await crud.get_course_by_slug(slug)
+
+    if not course or course.get("user_id") != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
+    # Convert to response format
+    chapters = [Chapter(**ch) for ch in course.get("chapters", [])]
+
+    return GenerateCourseResponse(
+        id=course.get("id"),
+        slug=course.get("slug"),
         topic=course.get("original_topic", course.get("topic", "")),
         difficulty=course.get("difficulty", "intermediate"),
         category=course.get("category"),
