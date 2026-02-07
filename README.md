@@ -186,6 +186,16 @@ quizes
 | 4 | Social Login | Medium | Google, Apple, LinkedIn OAuth |
 | 5 | Enhanced User Profile | Medium | Age, education level, goals for personalized content |
 | 6 | Human Mentor Accounts | Low | Generate/review courses, referral codes, student tracking |
+| 7 | AI Flashcards | High | Auto-generate flashcards from course chapters for quick review |
+| 7 | Spaced Repetition | High | Smart review scheduling (SM-2 algorithm) to improve retention |
+| 8 | AI Tutor Chat | High | Chat interface to ask questions about course content (RAG-based) |
+| 8 | YouTube Video Support | High | Generate courses from YouTube video URLs via transcript extraction |
+| 9 | Study Schedule Generator | Medium | AI creates personalized study plan based on exam date and availability |
+| 9 | AI Summarization | Medium | Generate condensed chapter summaries for quick review before exams |
+| 10 | Multi-language Support | Medium | Generate courses/quizzes in 20+ languages |
+| 10 | LMS Integration (Canvas) | Medium | Import courses/assignments from Canvas, Blackboard via API |
+| 11 | Chrome Extension | Low | Right-click any webpage to generate a course from its content |
+| 11 | Mobile App (PWA) | Low | Installable progressive web app with offline support |
 
 ## Environment Variables
 
