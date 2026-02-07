@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from app.models.course import Chapter, CourseConfig
 from app.models.question import QuestionGenerationConfig, ChapterQuestions
 from app.models.document_analysis import DocumentOutline, ConfirmedSection
+from app.models.mentor import WeakArea, GapQuizQuestion
 from app.models.token_usage import TokenUsageRecord, OperationType
 from app.db import token_repository
 
@@ -272,10 +273,42 @@ class BaseAIService(ABC):
         """
         pass
 
+    @abstractmethod
+    async def generate_gap_quiz_questions(
+        self,
+        weak_areas: List[WeakArea],
+        course_topic: str,
+        difficulty: str,
+        num_questions: int = 5,
+        include_hints: bool = False,
+        user_id: Optional[str] = None,
+        context: Optional[str] = None
+    ) -> List[GapQuizQuestion]:
+        """
+        Generate extra AI questions targeting weak areas for gap quiz.
+
+        This is an optional feature - the base gap quiz already includes
+        wrong answers for free. These extra questions provide additional
+        practice on weak areas.
+
+        Args:
+            weak_areas: List of WeakArea objects with chapter info and concepts
+            course_topic: The course topic
+            difficulty: Course difficulty level
+            num_questions: Number of questions to generate
+            include_hints: Whether to include hints in questions
+            user_id: User ID for token usage logging
+            context: Context info for token logging
+
+        Returns:
+            List of GapQuizQuestion objects targeting weak concepts
+        """
+        pass
+
     def get_provider_name(self) -> str:
         """
         Get the name of this AI provider.
-        
+
         Returns:
             Provider name (e.g., "claude", "openai", "mock")
         """

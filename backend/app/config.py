@@ -46,6 +46,7 @@ class UseCase(str, Enum):
     RAG_QUERY = "rag_query"
     TOPIC_VALIDATION = "topic_validation"
     DOCUMENT_ANALYSIS = "document_analysis"
+    GAP_QUIZ_GENERATION = "gap_quiz_generation"
 
 
 class Settings(BaseSettings):
@@ -94,6 +95,7 @@ class Settings(BaseSettings):
     model_rag_query: str = "claude-3-5-haiku-20241022"
     model_topic_validation: str = "claude-3-5-haiku-20241022"
     model_document_analysis: str = "claude-3-5-haiku-20241022"
+    model_gap_quiz: str = "claude-3-5-haiku-20241022"
 
     # AI Settings
     max_tokens_chapter: int = 8000
@@ -104,9 +106,14 @@ class Settings(BaseSettings):
     max_tokens_rag: int = 1000
     max_tokens_validation: int = 500
     max_tokens_document_analysis: int = 4000
+    max_tokens_gap_quiz: int = 4000
 
     # Document Analysis Settings
     analysis_expiry_minutes: int = 30  # TTL for pending document analyses
+
+    # Mentor Configuration
+    mentor_chapters_threshold: int = 3  # Number of chapters before mentor becomes available
+    mentor_weak_score_threshold: float = 0.7  # Score below which a chapter is considered weak (70%)
 
     temperature: float = 0.7
     
@@ -140,6 +147,7 @@ class Settings(BaseSettings):
             UseCase.RAG_QUERY: self.model_rag_query,
             UseCase.TOPIC_VALIDATION: self.model_topic_validation,
             UseCase.DOCUMENT_ANALYSIS: self.model_document_analysis,
+            UseCase.GAP_QUIZ_GENERATION: self.model_gap_quiz,
         }
         return use_case_map.get(use_case, self.model_chapter_generation)
     
@@ -183,6 +191,7 @@ class Settings(BaseSettings):
             UseCase.RAG_QUERY: self.max_tokens_rag,
             UseCase.TOPIC_VALIDATION: self.max_tokens_validation,
             UseCase.DOCUMENT_ANALYSIS: self.max_tokens_document_analysis,
+            UseCase.GAP_QUIZ_GENERATION: self.max_tokens_gap_quiz,
         }
         return use_case_map.get(use_case, 2000)
 

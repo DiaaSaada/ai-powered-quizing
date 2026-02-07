@@ -15,6 +15,7 @@ class OperationType(str, Enum):
     ANSWER_CHECK = "ANSWER_CHECK"
     FEEDBACK_GENERATION = "FEEDBACK_GENERATION"
     RAG_ANSWER = "RAG_ANSWER"
+    GAP_QUIZ_GENERATION = "GAP_QUIZ_GENERATION"
 
 
 class TokenUsageRecord(BaseModel):

@@ -16,6 +16,7 @@ from app.models.question import (
     TrueFalseQuestion,
     QuestionDifficulty,
 )
+from app.models.mentor import WeakArea, GapQuizQuestion
 from app.models.token_usage import OperationType
 from app.services.base_ai_service import BaseAIService
 from app.config import settings
@@ -885,3 +886,133 @@ Return ONLY valid JSON (no markdown, no extra text):
         chapters = [Chapter(**chapter) for chapter in data.get("chapters", [])]
 
         return chapters
+
+    async def generate_gap_quiz_questions(
+        self,
+        weak_areas: List[WeakArea],
+        course_topic: str,
+        difficulty: str,
+        num_questions: int = 5,
+        include_hints: bool = False,
+        user_id: Optional[str] = None,
+        context: Optional[str] = None
+    ) -> List[GapQuizQuestion]:
+        """
+        Generate extra AI questions targeting weak areas for gap quiz.
+
+        Args:
+            weak_areas: List of WeakArea objects
+            course_topic: The course topic
+            difficulty: Course difficulty level
+            num_questions: Number of questions to generate
+            include_hints: Whether to include hints
+            user_id: User ID for token logging
+            context: Context info for logging
+
+        Returns:
+            List of GapQuizQuestion objects targeting weak concepts
+        """
+        # Build weak areas info for prompt
+        weak_areas_info = []
+        for area in weak_areas:
+            concepts = [wc.concept for wc in area.weak_concepts]
+            weak_areas_info.append({
+                "chapter": area.chapter_number,
+                "title": area.chapter_title,
+                "score": f"{area.score:.0%}",
+                "weak_concepts": concepts[:5]
+            })
+
+        hint_instruction = ""
+        if include_hints:
+            hint_instruction = """- hint: A helpful hint that guides the learner without giving away the answer (1-2 sentences)"""
+
+        prompt = f"""You are an expert exam creator generating remedial questions to help a student improve in their weak areas.
+
+COURSE: {course_topic} ({difficulty} level)
+
+WEAK AREAS (areas where the student needs improvement):
+{json.dumps(weak_areas_info, indent=2)}
+
+Generate EXACTLY {num_questions} questions targeting these weak areas.
+
+RULES:
+1. Focus questions on the weak concepts listed above
+2. Mix question types: ~70% MCQ, ~30% True/False
+3. Mix difficulties: ~40% easy, ~40% medium, ~20% hard
+4. MCQ options: exactly 4 options (A, B, C, D)
+5. Each question must target a specific weak concept
+6. Provide clear, educational explanations
+7. NO trick questions or deliberately confusing wording
+
+Return ONLY valid JSON (no markdown, no extra text):
+{{
+  "questions": [
+    {{
+      "question_type": "mcq",
+      "difficulty": "easy|medium|hard",
+      "question_text": "Clear question text?",
+      "options": ["A) First option", "B) Second", "C) Third", "D) Fourth"],
+      "correct_answer": "A",
+      "explanation": "Why A is correct...",
+      {'"hint": "Helpful hint...",' if include_hints else ''}
+      "source_chapter": 1,
+      "target_concept": "The specific concept this targets"
+    }},
+    {{
+      "question_type": "true_false",
+      "difficulty": "medium",
+      "question_text": "A statement that is true or false.",
+      "options": null,
+      "correct_answer": true,
+      "explanation": "Why this is true/false...",
+      {'"hint": "Helpful hint...",' if include_hints else ''}
+      "source_chapter": 2,
+      "target_concept": "The concept being tested"
+    }}
+  ]
+}}"""
+
+        start_time = llm_logger.log_request(settings.model_gap_quiz, prompt, "Gap Quiz Generation")
+        response = await self.client.messages.create(
+            model=settings.model_gap_quiz,
+            max_tokens=settings.max_tokens_gap_quiz,
+            temperature=0.7,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        llm_logger.log_response(start_time, "Gap Quiz Generation")
+
+        # Log token usage
+        await self.log_token_usage(
+            operation=OperationType.GAP_QUIZ_GENERATION,
+            model=settings.model_gap_quiz,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            user_id=user_id,
+            context=context or course_topic
+        )
+
+        # Parse response
+        response_text = response.content[0].text
+        data = self._parse_json_response(response_text)
+
+        # Create GapQuizQuestion objects
+        questions = []
+        for item in data.get("questions", []):
+            try:
+                questions.append(GapQuizQuestion(
+                    id=str(uuid.uuid4()),
+                    question_type=item.get("question_type", "mcq"),
+                    difficulty=item.get("difficulty", "medium"),
+                    question_text=item["question_text"],
+                    options=item.get("options"),
+                    correct_answer=item["correct_answer"],
+                    explanation=item.get("explanation", ""),
+                    hint=item.get("hint") if include_hints else None,
+                    source_chapter=item.get("source_chapter", 1),
+                    target_concept=item.get("target_concept", "")
+                ))
+            except Exception:
+                continue
+
+        return questions

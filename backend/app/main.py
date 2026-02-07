@@ -46,6 +46,11 @@ tags_metadata = [
         "description": "**Token Usage** - Track AI token consumption per user. "
                        "View usage history and aggregated statistics by operation and provider.",
     },
+    {
+        "name": "mentor",
+        "description": "**AI Mentor** - Get personalized feedback and gap covering quizzes. "
+                       "Analyzes weak areas and generates targeted practice questions.",
+    },
 ]
 
 
@@ -187,7 +192,7 @@ async def health_check():
 
 
 # Import routers
-from app.routers import auth, courses, questions, progress, my_courses, tokens
+from app.routers import auth, courses, questions, progress, my_courses, tokens, mentor
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
@@ -196,6 +201,7 @@ app.include_router(questions.router, prefix="/api/v1/questions", tags=["question
 app.include_router(progress.router, prefix="/api/v1/progress", tags=["progress"])
 app.include_router(my_courses.router, prefix="/api/v1/my-courses", tags=["my-courses"])
 app.include_router(tokens.router, tags=["tokens"])
+app.include_router(mentor.router, prefix="/api/v1/mentor", tags=["mentor"])
 
 
 if __name__ == "__main__":

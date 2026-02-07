@@ -16,6 +16,7 @@ from app.models.question import (
     TrueFalseQuestion,
     QuestionDifficulty,
 )
+from app.models.mentor import WeakArea, GapQuizQuestion
 from app.services.base_ai_service import BaseAIService
 
 
@@ -192,7 +193,9 @@ class MockAIService(BaseAIService):
         self,
         topic: str,
         config: CourseConfig,
-        content: str = ""
+        content: str = "",
+        user_id: Optional[str] = None,
+        context: Optional[str] = None
     ) -> List[Chapter]:
         """
         Generate mock chapters for a given topic.
@@ -201,6 +204,8 @@ class MockAIService(BaseAIService):
             topic: The subject/topic for the course
             config: CourseConfig with chapter count, difficulty, depth, and time settings
             content: Optional document content for content-based generation
+            user_id: User ID for token logging (ignored in mock)
+            context: Context info (ignored in mock)
 
         Returns:
             List of Chapter objects
@@ -462,13 +467,17 @@ class MockAIService(BaseAIService):
 
     async def generate_questions_from_config(
         self,
-        config: QuestionGenerationConfig
+        config: QuestionGenerationConfig,
+        user_id: Optional[str] = None,
+        context: Optional[str] = None
     ) -> ChapterQuestions:
         """
         Generate realistic mock questions based on configuration.
 
         Args:
             config: QuestionGenerationConfig with all generation parameters
+            user_id: User ID for token logging (ignored in mock)
+            context: Context info (ignored in mock)
 
         Returns:
             ChapterQuestions object with generated questions
@@ -780,7 +789,9 @@ You're making progress! Keep it up!"""
         topic: str,
         content: str,
         confirmed_sections: List[ConfirmedSection],
-        difficulty: str
+        difficulty: str,
+        user_id: Optional[str] = None,
+        context: Optional[str] = None
     ) -> List[Chapter]:
         """
         Generate detailed chapters based on user-confirmed outline.
@@ -856,6 +867,119 @@ You're making progress! Keep it up!"""
             chapters.append(chapter)
 
         return chapters
+
+    async def generate_gap_quiz_questions(
+        self,
+        weak_areas: List[WeakArea],
+        course_topic: str,
+        difficulty: str,
+        num_questions: int = 5,
+        include_hints: bool = False,
+        user_id: Optional[str] = None,
+        context: Optional[str] = None
+    ) -> List[GapQuizQuestion]:
+        """
+        Generate mock extra questions targeting weak areas.
+
+        Args:
+            weak_areas: List of WeakArea objects
+            course_topic: The course topic
+            difficulty: Course difficulty level
+            num_questions: Number of questions to generate
+            include_hints: Whether to include hints
+            user_id: User ID for token logging (ignored in mock)
+            context: Context info for logging (ignored in mock)
+
+        Returns:
+            List of GapQuizQuestion objects
+        """
+        questions = []
+        templates = self.mcq_templates.get(difficulty, self.mcq_templates["intermediate"])
+        tf_templates_list = self.tf_templates.get(difficulty, self.tf_templates["intermediate"])
+
+        # Collect all weak concepts
+        all_concepts = []
+        for area in weak_areas:
+            for wc in area.weak_concepts:
+                all_concepts.append({
+                    "concept": wc.concept,
+                    "chapter_number": area.chapter_number,
+                    "chapter_title": area.chapter_title
+                })
+
+        # If no specific concepts, use chapter titles
+        if not all_concepts:
+            for area in weak_areas:
+                all_concepts.append({
+                    "concept": area.chapter_title,
+                    "chapter_number": area.chapter_number,
+                    "chapter_title": area.chapter_title
+                })
+
+        # If still empty, create generic
+        if not all_concepts:
+            all_concepts = [{
+                "concept": "general concepts",
+                "chapter_number": 1,
+                "chapter_title": "General Review"
+            }]
+
+        # Generate questions
+        for i in range(num_questions):
+            concept_info = all_concepts[i % len(all_concepts)]
+            concept = concept_info["concept"]
+
+            # Alternate between MCQ and True/False
+            is_mcq = i % 3 != 2  # 2/3 MCQ, 1/3 T/F
+
+            # Get question difficulty
+            q_difficulty = self._get_question_difficulty(difficulty)
+
+            if is_mcq:
+                template = templates[i % len(templates)]
+                question_text = template.format(concept=concept, topic=course_topic)
+                correct_idx = random.randint(0, 3)
+                correct_letter = ["A", "B", "C", "D"][correct_idx]
+
+                hint = None
+                if include_hints:
+                    hint = f"Review the section on {concept} in Chapter {concept_info['chapter_number']}."
+
+                questions.append(GapQuizQuestion(
+                    id=str(uuid.uuid4()),
+                    question_type="mcq",
+                    difficulty=q_difficulty.value,
+                    question_text=question_text,
+                    options=self._generate_mcq_options(concept, correct_idx),
+                    correct_answer=correct_letter,
+                    explanation=f"The correct answer is {correct_letter}. {concept} is a key topic from {concept_info['chapter_title']}.",
+                    hint=hint,
+                    source_chapter=concept_info["chapter_number"],
+                    target_concept=concept
+                ))
+            else:
+                template = tf_templates_list[i % len(tf_templates_list)]
+                question_text = template.format(concept=concept, topic=course_topic)
+                correct_answer = random.choice([True, False])
+
+                hint = None
+                if include_hints:
+                    hint = f"Think about what you learned about {concept} in Chapter {concept_info['chapter_number']}."
+
+                questions.append(GapQuizQuestion(
+                    id=str(uuid.uuid4()),
+                    question_type="true_false",
+                    difficulty=q_difficulty.value,
+                    question_text=question_text,
+                    options=None,
+                    correct_answer=correct_answer,
+                    explanation=f"This statement is {'true' if correct_answer else 'false'}. Review {concept} in {concept_info['chapter_title']}.",
+                    hint=hint,
+                    source_chapter=concept_info["chapter_number"],
+                    target_concept=concept
+                ))
+
+        return questions
 
     def get_supported_topics(self) -> List[str]:
         """Get list of topics that have specific mock data."""

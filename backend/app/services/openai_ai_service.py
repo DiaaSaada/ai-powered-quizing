@@ -16,6 +16,7 @@ from app.models.question import (
     TrueFalseQuestion,
     QuestionDifficulty,
 )
+from app.models.mentor import WeakArea, GapQuizQuestion
 from app.models.token_usage import OperationType
 from app.services.base_ai_service import BaseAIService
 from app.config import settings
@@ -869,3 +870,122 @@ Return valid JSON:
         chapters = [Chapter(**chapter) for chapter in data.get("chapters", [])]
 
         return chapters
+
+    async def generate_gap_quiz_questions(
+        self,
+        weak_areas: List[WeakArea],
+        course_topic: str,
+        difficulty: str,
+        num_questions: int = 5,
+        include_hints: bool = False,
+        user_id: Optional[str] = None,
+        context: Optional[str] = None
+    ) -> List[GapQuizQuestion]:
+        """
+        Generate extra AI questions targeting weak areas for gap quiz.
+
+        Args:
+            weak_areas: List of WeakArea objects
+            course_topic: The course topic
+            difficulty: Course difficulty level
+            num_questions: Number of questions to generate
+            include_hints: Whether to include hints
+            user_id: User ID for token logging
+            context: Context info for logging
+
+        Returns:
+            List of GapQuizQuestion objects targeting weak concepts
+        """
+        # Build weak areas info for prompt
+        weak_areas_info = []
+        for area in weak_areas:
+            concepts = [wc.concept for wc in area.weak_concepts]
+            weak_areas_info.append({
+                "chapter": area.chapter_number,
+                "title": area.chapter_title,
+                "score": f"{area.score:.0%}",
+                "weak_concepts": concepts[:5]
+            })
+
+        hint_field = '"hint": "Helpful hint...",' if include_hints else ''
+
+        prompt = f"""You are an expert exam creator generating remedial questions to help a student improve.
+
+COURSE: {course_topic} ({difficulty} level)
+
+WEAK AREAS (areas needing improvement):
+{json.dumps(weak_areas_info, indent=2)}
+
+Generate EXACTLY {num_questions} questions targeting these weak areas.
+
+RULES:
+1. Focus on weak concepts listed
+2. Mix types: ~70% MCQ, ~30% True/False
+3. Mix difficulties: ~40% easy, ~40% medium, ~20% hard
+4. MCQ options: exactly 4 (A, B, C, D)
+5. Target specific weak concepts
+6. Clear, educational explanations
+7. NO trick questions
+
+Return valid JSON:
+{{
+  "questions": [
+    {{
+      "question_type": "mcq",
+      "difficulty": "easy|medium|hard",
+      "question_text": "Question?",
+      "options": ["A) First", "B) Second", "C) Third", "D) Fourth"],
+      "correct_answer": "A",
+      "explanation": "Why A is correct...",
+      {hint_field}
+      "source_chapter": 1,
+      "target_concept": "Concept name"
+    }}
+  ]
+}}"""
+
+        response = await self.client.chat.completions.create(
+            model=settings.model_gap_quiz,
+            max_tokens=settings.max_tokens_gap_quiz,
+            temperature=0.7,
+            messages=[
+                {"role": "system", "content": "You are an expert exam creator. Always return valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+
+        # Log token usage
+        if response.usage:
+            await self.log_token_usage(
+                operation=OperationType.GAP_QUIZ_GENERATION,
+                model=settings.model_gap_quiz,
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
+                user_id=user_id,
+                context=context or course_topic
+            )
+
+        response_text = response.choices[0].message.content
+        data = json.loads(response_text)
+
+        # Create GapQuizQuestion objects
+        questions = []
+        for item in data.get("questions", []):
+            try:
+                questions.append(GapQuizQuestion(
+                    id=str(uuid.uuid4()),
+                    question_type=item.get("question_type", "mcq"),
+                    difficulty=item.get("difficulty", "medium"),
+                    question_text=item["question_text"],
+                    options=item.get("options"),
+                    correct_answer=item["correct_answer"],
+                    explanation=item.get("explanation", ""),
+                    hint=item.get("hint") if include_hints else None,
+                    source_chapter=item.get("source_chapter", 1),
+                    target_concept=item.get("target_concept", "")
+                ))
+            except Exception:
+                continue
+
+        return questions

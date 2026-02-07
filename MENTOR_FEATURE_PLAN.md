@@ -2,7 +2,7 @@
 
 ## Overview
 
-Implement AI Mentor Feedback that triggers after completing N chapters, analyzes quiz results to find weak areas, and generates a Gap Covering Quiz with optional hints.
+Implement AI Mentor Feedback that triggers after completing N chapters, analyzes quiz results to find weak areas, and generates a Gap Covering Quiz.
 
 **Key Decisions:**
 - Weak Area Detection: Hybrid (chapter scores + wrong answer analysis)
@@ -10,7 +10,9 @@ Implement AI Mentor Feedback that triggers after completing N chapters, analyzes
 - Hints: Optional toggle (user chooses to show/hide)
 - Scope: Backend only
 - **Course Slug**: Courses identified by unique slug (e.g., `python-programming-beginner-a7x3k2`)
-- **User-Agnostic Gap Quizzes**: Stored in MongoDB by course slug, reusable across users
+- **Gap Quiz Strategy**:
+  - **Always free**: Wrong answers from completed quizzes (pulled from user_progress)
+  - **Optional AI**: User can request extra AI-generated questions on weak areas
 
 ---
 
@@ -135,17 +137,27 @@ class GapQuizQuestion(BaseModel):
     source_chapter: int
     source_concept: str
 
+class WrongAnswer(BaseModel):
+    """A question the user got wrong - pulled from user_progress"""
+    question_id: str
+    question_text: str
+    question_type: Literal["mcq", "true_false"]
+    user_answer: str
+    correct_answer: Union[str, bool]
+    explanation: str
+    chapter_number: int
+    chapter_title: str
+    hint: Optional[str] = None  # Added if include_hints=True
+
 class GapQuiz(BaseModel):
-    """User-agnostic gap quiz, stored by course slug"""
-    id: str
-    course_slug: str  # Links to course, NOT user
-    weak_areas_key: str  # Hash of weak areas for lookup
-    questions: List[GapQuizQuestion]
-    weak_areas_covered: List[str]
+    """Gap quiz combining wrong answers + optional AI questions"""
+    course_slug: str
+    wrong_answers: List[WrongAnswer]  # Always included (free)
+    extra_questions: List[GapQuizQuestion]  # Only if generate_extra=True
     total_questions: int
+    wrong_answers_count: int
+    extra_questions_count: int
     include_hints: bool
-    created_at: datetime
-    provider: str  # AI provider used
 
 class MentorStatusResponse(BaseModel):
     mentor_available: bool
@@ -153,73 +165,75 @@ class MentorStatusResponse(BaseModel):
     chapters_required: int
     average_score: float
     weak_areas_count: int
+    wrong_answers_count: int  # How many wrong answers available
     course_slug: str
 
 class GenerateGapQuizRequest(BaseModel):
-    course_slug: str  # Reference course by slug
+    course_slug: str
     include_hints: bool = False
-    max_questions: int = 15
+    generate_extra: bool = False  # Opt-in for AI-generated questions
+    extra_questions_count: int = 5  # How many AI questions to add (if generate_extra=True)
 
 class MentorFeedbackResponse(BaseModel):
     analysis: MentorAnalysis
     feedback: str
     quiz: GapQuiz
-    cached: bool  # True if quiz was reused from cache
+    ai_generated: bool  # True if extra questions were AI-generated
 ```
 
 **Test:** Models import without errors
 
 ---
 
-## Step 4: Add Gap Quiz MongoDB Storage
+## Step 4: Add Wrong Answers Query to CRUD
 
 **Files to Modify:**
-- `backend/app/db/models.py`
 - `backend/app/db/crud.py`
-
-**Add GapQuizDocument:**
-```python
-class GapQuizDocument(BaseModel):
-    """Gap quiz stored by course, user-agnostic"""
-    course_slug: str  # Links to course
-    weak_areas_key: str  # Hash of weak chapter numbers for lookup
-    questions: List[Dict[str, Any]]
-    weak_areas_covered: List[str]
-    include_hints: bool
-    provider: str
-    created_at: datetime
-    updated_at: datetime
-```
 
 **Add CRUD operations:**
 ```python
-# Collection: gap_quizzes
+async def get_wrong_answers_for_course(
+    user_id: str,
+    course_topic: str,
+    difficulty: str
+) -> List[Dict]:
+    """
+    Get all wrong answers for a user across all chapters of a course.
 
-async def get_gap_quiz_by_course(
-    course_slug: str,
-    weak_areas_key: str,
-    include_hints: bool
-) -> Optional[Dict]:
-    """Get cached gap quiz if exists"""
+    Queries user_progress collection, filters answers where is_correct=False.
+    Returns list of wrong answer records with chapter info.
+    """
+    db = MongoDB.get_db()
 
-async def save_gap_quiz(quiz: GapQuizDocument) -> str:
-    """Save gap quiz, return ID"""
+    # Find all progress records for this user/course
+    cursor = db["user_progress"].find({
+        "user_id": user_id,
+        "course_topic": course_topic.lower(),
+        "difficulty": difficulty
+    })
 
-async def list_gap_quizzes_for_course(course_slug: str) -> List[Dict]:
-    """List all gap quizzes for a course"""
+    wrong_answers = []
+    async for record in cursor:
+        chapter_num = record.get("chapter_number")
+        chapter_title = record.get("chapter_title", "")
+
+        for answer in record.get("answers", []):
+            if not answer.get("is_correct", True):
+                wrong_answers.append({
+                    "question_id": answer.get("question_id"),
+                    "question_text": answer.get("question_text"),
+                    "user_answer": answer.get("selected"),
+                    "correct_answer": answer.get("correct"),
+                    "chapter_number": chapter_num,
+                    "chapter_title": chapter_title
+                })
+
+    return wrong_answers
 ```
 
-**MongoDB Index:**
-```python
-# Compound index for fast lookup
-gap_quizzes.create_index([
-    ("course_slug", 1),
-    ("weak_areas_key", 1),
-    ("include_hints", 1)
-], unique=True)
-```
+**Note:** No new MongoDB collection needed. Wrong answers come from existing `user_progress` collection. AI-generated extra questions are returned directly without caching (user pays for each generation).
 
-**Test:** Gap quizzes save and retrieve correctly
+**Test:** Query returns wrong answers correctly
 
 ---
 
@@ -238,35 +252,39 @@ class WeakAreaAnalyzer:
         1. Get course by slug to find topic/difficulty
         2. Fetch all progress records for user/course
         3. Filter chapters with score < threshold (0.7)
-        4. For weak chapters, analyze wrong answers
-        5. Return MentorAnalysis
+        4. Collect all wrong answers
+        5. Return MentorAnalysis with weak_areas and wrong_answers_count
         """
 
     def _identify_weak_chapters(self, progress_records: List[Dict]) -> List[Dict]:
         """Find chapters with score < mentor_weak_score_threshold"""
 
-    def _extract_concepts_from_wrong_answers(
-        self, answers: List[Dict], chapter_key_concepts: List[str]
-    ) -> List[WeakConcept]:
-        """Map wrong answers to key_concepts using text matching"""
+    async def get_wrong_answers(
+        self, user_id: str, course_slug: str
+    ) -> List[WrongAnswer]:
+        """
+        Get all wrong answers for gap quiz.
+
+        1. Get course by slug
+        2. Query user_progress for wrong answers
+        3. Fetch original questions to get explanations
+        4. Return formatted WrongAnswer objects
+        """
 
     def is_mentor_available(self, chapters_completed: int) -> bool:
         """Check if chapters_completed >= threshold"""
-
-    def generate_weak_areas_key(self, weak_areas: List[WeakArea]) -> str:
-        """Generate hash key from weak chapter numbers for cache lookup"""
-        chapters = sorted([wa.chapter_number for wa in weak_areas])
-        return "-".join(map(str, chapters))
 
 def get_weak_area_analyzer() -> WeakAreaAnalyzer:
     """Singleton factory"""
 ```
 
-**Test:** Analyzer returns valid MentorAnalysis with mock data
+**Test:** Analyzer returns valid MentorAnalysis and wrong answers
 
 ---
 
-## Step 6: Add Gap Quiz Generation to AI Services
+## Step 6: Add Extra Questions Generation to AI Services (Optional Feature)
+
+**Note:** This step is only needed when `generate_extra=True`. The base gap quiz (wrong answers) requires no AI.
 
 **Files to Modify:**
 - `backend/app/services/base_ai_service.py` - Add abstract method
@@ -278,38 +296,45 @@ def get_weak_area_analyzer() -> WeakAreaAnalyzer:
 **Add to BaseAIService:**
 ```python
 @abstractmethod
-async def generate_gap_quiz(
+async def generate_extra_gap_questions(
     self,
     weak_areas: List[WeakArea],
+    wrong_answers: List[WrongAnswer],  # Context: what user got wrong
     course_topic: str,
     difficulty: str,
+    num_questions: int = 5,
     include_hints: bool = False,
-    max_questions: int = 15,
     user_id: Optional[str] = None,
     context: Optional[str] = None
-) -> Dict[str, Any]:
-    """Generate targeted quiz for weak areas with optional hints."""
+) -> List[GapQuizQuestion]:
+    """
+    Generate ADDITIONAL questions on weak areas.
+
+    Uses wrong_answers as context to avoid duplicates and
+    focus on reinforcing the same concepts user struggled with.
+    """
     pass
 ```
 
-**Mock Implementation:** Return template questions based on weak_areas
-
 **Claude/OpenAI/Gemini Prompt:**
 ```
-Generate {max_questions} quiz questions targeting these weak areas:
+The user struggled with these questions:
+{wrong_answers_summary}
+
+Generate {num_questions} NEW questions to reinforce these weak areas:
 {weak_areas_json}
 
-For each question:
-- Focus on the specific weak concepts listed
+Requirements:
+- Focus on the same concepts the user got wrong
+- Do NOT repeat the exact same questions
 - Mix MCQ and True/False types
-- Include difficulty levels (easy/medium/hard)
 - Provide clear explanations
 {if include_hints: "- Include a helpful hint for each question"}
 
-Return JSON: { "questions": [...], "coverage_summary": "..." }
+Return JSON: { "questions": [...] }
 ```
 
-**Test:** `?provider=mock` returns valid gap quiz
+**Test:** `generate_extra=true&provider=mock` returns extra questions
 
 ---
 
@@ -379,34 +404,54 @@ async def get_mentor_config():
     """Return current mentor settings"""
 ```
 
-**Cache Logic in generate_gap_quiz:**
+**Logic in generate_gap_quiz:**
 ```python
-# Generate weak areas key from user's weak chapters
-weak_areas_key = analyzer.generate_weak_areas_key(analysis.weak_areas)
+# 1. Get weak area analysis
+analysis = await analyzer.analyze_user_progress(user_id, course_slug)
 
-# Check cache (user-agnostic)
-cached_quiz = await get_gap_quiz_by_course(
+# 2. Get wrong answers (always free)
+wrong_answers = await analyzer.get_wrong_answers(user_id, course_slug)
+
+# 3. Optionally add hints to wrong answers
+if request.include_hints:
+    wrong_answers = add_hints_to_questions(wrong_answers)
+
+# 4. Optionally generate extra AI questions
+extra_questions = []
+if request.generate_extra and request.extra_questions_count > 0:
+    ai_service = AIServiceFactory.get_service(UseCase.GAP_QUIZ_GENERATION)
+    extra_questions = await ai_service.generate_extra_gap_questions(
+        weak_areas=analysis.weak_areas,
+        wrong_answers=wrong_answers,
+        course_topic=course.topic,
+        difficulty=course.difficulty,
+        num_questions=request.extra_questions_count,
+        include_hints=request.include_hints
+    )
+
+# 5. Build quiz
+quiz = GapQuiz(
     course_slug=course_slug,
-    weak_areas_key=weak_areas_key,
+    wrong_answers=wrong_answers,
+    extra_questions=extra_questions,
+    total_questions=len(wrong_answers) + len(extra_questions),
+    wrong_answers_count=len(wrong_answers),
+    extra_questions_count=len(extra_questions),
     include_hints=request.include_hints
 )
 
-if cached_quiz:
-    # Reuse existing quiz
-    return MentorFeedbackResponse(
-        analysis=analysis,
-        feedback=await ai_service.generate_feedback(...),
-        quiz=cached_quiz,
-        cached=True
-    )
+# 6. Generate personalized feedback
+feedback = await ai_service.generate_feedback(...)
 
-# Generate new quiz and cache it
-new_quiz = await ai_service.generate_gap_quiz(...)
-await save_gap_quiz(new_quiz)
-return MentorFeedbackResponse(..., cached=False)
+return MentorFeedbackResponse(
+    analysis=analysis,
+    feedback=feedback,
+    quiz=quiz,
+    ai_generated=len(extra_questions) > 0
+)
 ```
 
-**Test:** All endpoints respond correctly, caching works
+**Test:** All endpoints respond correctly
 
 ---
 
@@ -454,22 +499,22 @@ MAX_TOKENS_GAP_QUIZ=4000
 | File | Purpose |
 |------|---------|
 | `app/models/mentor.py` | Mentor Pydantic models |
-| `app/services/weak_area_analyzer.py` | Weak area detection service |
+| `app/services/weak_area_analyzer.py` | Weak area detection + wrong answers collection |
 | `app/routers/mentor.py` | Mentor API endpoints |
 
 ### Modified Files:
 | File | Changes |
 |------|---------|
-| `app/models/course.py` | Add slug field, slug generator |
-| `app/db/models.py` | Add slug to CourseDocument, add GapQuizDocument |
-| `app/db/crud.py` | Add gap quiz CRUD operations |
-| `app/routers/courses.py` | Generate slug on create, add get by slug |
-| `app/config.py` | Add mentor settings, UseCase |
-| `app/services/base_ai_service.py` | Add `generate_gap_quiz()` abstract |
-| `app/services/mock_ai_service.py` | Implement `generate_gap_quiz()` |
-| `app/services/claude_ai_service.py` | Implement `generate_gap_quiz()` |
-| `app/services/openai_ai_service.py` | Implement `generate_gap_quiz()` |
-| `app/services/gemini_ai_service.py` | Implement `generate_gap_quiz()` |
+| `app/models/course.py` | Add slug field, slug generator (DONE) |
+| `app/db/models.py` | Add slug to CourseDocument (DONE) |
+| `app/db/crud.py` | Add `get_wrong_answers_for_course()`, slug functions (DONE) |
+| `app/routers/courses.py` | Generate slug on create, add get by slug (DONE) |
+| `app/config.py` | Add mentor settings, UseCase (DONE) |
+| `app/services/base_ai_service.py` | Add `generate_extra_gap_questions()` abstract |
+| `app/services/mock_ai_service.py` | Implement `generate_extra_gap_questions()` |
+| `app/services/claude_ai_service.py` | Implement `generate_extra_gap_questions()` |
+| `app/services/openai_ai_service.py` | Implement `generate_extra_gap_questions()` |
+| `app/services/gemini_ai_service.py` | Implement `generate_extra_gap_questions()` |
 | `app/models/token_usage.py` | Add GAP_QUIZ_GENERATION |
 | `app/main.py` | Register mentor router |
 | `.env.example` | Document new settings |
@@ -485,63 +530,45 @@ User completes chapter N
 Frontend calls GET /api/v1/mentor/{course_slug}/status
         |
         v
-Backend returns { mentor_available: true/false, course_slug, ... }
+Backend returns { mentor_available, wrong_answers_count, ... }
         |
         v (if available)
 User clicks "Get Mentor Feedback"
         |
         v
 Frontend calls POST /api/v1/mentor/{course_slug}/generate-quiz
-  { include_hints: true/false }
+  { include_hints: false, generate_extra: false }  // Free option
+  OR
+  { include_hints: true, generate_extra: true, extra_questions_count: 5 }  // AI option
         |
         v
 Backend:
   1. WeakAreaAnalyzer.analyze_user_progress(user_id, course_slug)
-  2. Generate weak_areas_key from weak chapters
-  3. Check cache: get_gap_quiz_by_course(course_slug, weak_areas_key, hints)
-  4. If cached -> reuse quiz (no AI cost)
-  5. If not -> AIService.generate_gap_quiz() and save to cache
-  6. AIService.generate_feedback() (always personalized)
+  2. Get wrong answers from user_progress (FREE)
+  3. If generate_extra=true: AIService.generate_extra_gap_questions() (AI cost)
+  4. AIService.generate_feedback() (personalized)
         |
         v
 Returns MentorFeedbackResponse:
   - analysis (user's weak areas)
   - feedback (personalized AI mentor text)
-  - quiz (gap covering questions - may be cached)
-  - cached (true if quiz was reused)
+  - quiz:
+      - wrong_answers: [5 questions user got wrong] (always free)
+      - extra_questions: [5 AI questions] (only if generate_extra=true)
+  - ai_generated (true if extra questions were generated)
 ```
 
 ---
 
 ## MongoDB Collections
 
-### Existing:
-- `courses` - Add `slug` field
-- `user_progress` - No changes
+### Existing (modified):
+- `courses` - Add `slug` field (Step 1 - DONE)
+- `user_progress` - Query wrong answers from `answers` array (no schema change)
 
-### New:
-- `gap_quizzes` - User-agnostic gap quiz cache
-
-```javascript
-// gap_quizzes document structure
-{
-  "_id": ObjectId,
-  "course_slug": "python-programming-beginner-a7x3k2",
-  "weak_areas_key": "1-3-5",  // Chapters 1, 3, 5 are weak
-  "questions": [...],
-  "weak_areas_covered": ["Variables", "Functions", "Classes"],
-  "include_hints": true,
-  "provider": "claude",
-  "created_at": ISODate,
-  "updated_at": ISODate
-}
-
-// Index for fast lookup
-db.gap_quizzes.createIndex(
-  { "course_slug": 1, "weak_areas_key": 1, "include_hints": 1 },
-  { unique: true }
-)
-```
+### No New Collections
+Wrong answers come from existing `user_progress.answers` where `is_correct=false`.
+AI-generated extra questions are returned directly without caching (user pays per request).
 
 ---
 
@@ -549,13 +576,14 @@ db.gap_quizzes.createIndex(
 
 | Step | Command | Expected |
 |------|---------|----------|
-| 1 | Create course, check slug | Slug like `topic-difficulty-abc123` |
-| 2 | `python run.py` | Starts without error |
+| 1 | Create course, check slug | Slug like `topic-difficulty-abc123` (DONE) |
+| 2 | `python run.py` | Starts without error (DONE) |
 | 3 | `python -c "from app.models.mentor import *"` | No import error |
-| 4 | Save/get gap quiz from MongoDB | CRUD works |
-| 5 | Unit test analyzer | Correct analysis |
-| 6 | `curl /api/v1/mentor/.../generate-quiz?provider=mock` | Returns quiz |
-| 7 | Check MongoDB `token_usage` | GAP_QUIZ logged |
-| 8 | `curl /api/v1/mentor/{slug}/status` | Returns status |
+| 4 | Query wrong answers from user_progress | Returns wrong answers |
+| 5 | Unit test analyzer | Returns analysis + wrong answers |
+| 6 | `generate_extra=false` | Returns wrong answers only (FREE) |
+| 6b | `generate_extra=true&provider=mock` | Returns wrong + extra questions |
+| 7 | Check MongoDB `token_usage` | GAP_QUIZ logged (only if generate_extra) |
+| 8 | `curl /api/v1/mentor/{slug}/status` | Returns status + wrong_answers_count |
 | 9 | Open `/docs` | Mentor endpoints visible |
 | 10 | Check `.env.example` | New vars documented |

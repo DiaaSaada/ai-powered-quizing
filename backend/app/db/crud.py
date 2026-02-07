@@ -4,6 +4,7 @@ Provides async database operations for courses, questions, and progress.
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import hashlib
 from bson import ObjectId
 from app.db.connection import MongoDB
 from app.db.models import CourseDocument, QuestionDocument, UserProgressDocument
@@ -14,6 +15,7 @@ from app.models.course import Chapter, generate_course_slug
 COURSES_COLLECTION = "courses"
 QUESTIONS_COLLECTION = "questions"
 PROGRESS_COLLECTION = "user_progress"
+GAP_QUIZ_CACHE_COLLECTION = "gap_quiz_cache"
 
 
 # =============================================================================
@@ -941,3 +943,402 @@ async def delete_document_analysis(analysis_id: str) -> bool:
         return result.deleted_count > 0
     except Exception:
         return False
+
+
+# =============================================================================
+# Mentor / Gap Quiz Operations
+# =============================================================================
+
+async def get_user_progress_for_course(
+    user_id: str,
+    course_slug: str
+) -> List[Dict[str, Any]]:
+    """
+    Get all progress records for a user on a specific course (by slug).
+
+    Args:
+        user_id: User identifier
+        course_slug: Course slug identifier
+
+    Returns:
+        List of progress documents with chapter info
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return []
+
+    # First get the course to get topic and difficulty
+    course = await get_course_by_slug(course_slug)
+    if not course:
+        return []
+
+    normalized_topic = course.get("topic", "").lower().strip()
+    difficulty = course.get("difficulty", "")
+
+    cursor = db[PROGRESS_COLLECTION].find({
+        "user_id": user_id,
+        "course_topic": normalized_topic,
+        "difficulty": difficulty
+    }).sort("chapter_number", 1)
+
+    progress = await cursor.to_list(length=100)
+
+    # Add chapter titles from course
+    chapters_by_number = {
+        ch.get("number"): ch for ch in course.get("chapters", [])
+    }
+    for p in progress:
+        ch_num = p.get("chapter_number")
+        if ch_num in chapters_by_number:
+            p["chapter_title"] = chapters_by_number[ch_num].get("title", f"Chapter {ch_num}")
+        else:
+            p["chapter_title"] = f"Chapter {ch_num}"
+
+    return progress
+
+
+async def get_wrong_answers_for_course(
+    user_id: str,
+    course_slug: str
+) -> List[Dict[str, Any]]:
+    """
+    Get all wrong answers for a user on a specific course.
+
+    Args:
+        user_id: User identifier
+        course_slug: Course slug identifier
+
+    Returns:
+        List of wrong answer dicts with question details and chapter info
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return []
+
+    # Get the course
+    course = await get_course_by_slug(course_slug)
+    if not course:
+        return []
+
+    normalized_topic = course.get("topic", "").lower().strip()
+    difficulty = course.get("difficulty", "")
+
+    # Get all progress for this user/course
+    cursor = db[PROGRESS_COLLECTION].find({
+        "user_id": user_id,
+        "course_topic": normalized_topic,
+        "difficulty": difficulty
+    })
+
+    progress_docs = await cursor.to_list(length=100)
+
+    # Build chapter lookup
+    chapters_by_number = {
+        ch.get("number"): ch for ch in course.get("chapters", [])
+    }
+
+    # Collect question IDs for wrong answers
+    wrong_question_ids = []
+    wrong_answers_by_qid = {}  # question_id -> answer info
+
+    for prog in progress_docs:
+        chapter_num = prog.get("chapter_number")
+        chapter_title = chapters_by_number.get(chapter_num, {}).get("title", f"Chapter {chapter_num}")
+
+        for ans in prog.get("answers", []):
+            if not ans.get("is_correct", True):  # Wrong answer
+                qid = ans.get("question_id")
+                if qid:
+                    wrong_question_ids.append(qid)
+                    wrong_answers_by_qid[qid] = {
+                        "user_answer": ans.get("user_answer"),
+                        "chapter_number": chapter_num,
+                        "chapter_title": chapter_title
+                    }
+
+    if not wrong_question_ids:
+        return []
+
+    # Get questions from the questions collection to get full question details
+    questions_cursor = db[QUESTIONS_COLLECTION].find({
+        "course_topic": normalized_topic,
+        "difficulty": difficulty
+    })
+
+    question_docs = await questions_cursor.to_list(length=100)
+
+    # Build question lookup by ID
+    questions_by_id = {}
+    for doc in question_docs:
+        for q in doc.get("mcq", []):
+            questions_by_id[q.get("id")] = {
+                **q,
+                "question_type": "mcq"
+            }
+        for q in doc.get("true_false", []):
+            questions_by_id[q.get("id")] = {
+                **q,
+                "question_type": "true_false"
+            }
+
+    # Build wrong answers with full details
+    wrong_answers = []
+    for qid in wrong_question_ids:
+        if qid in questions_by_id and qid in wrong_answers_by_qid:
+            q = questions_by_id[qid]
+            ans_info = wrong_answers_by_qid[qid]
+            wrong_answers.append({
+                "question_id": qid,
+                "question_text": q.get("question_text", ""),
+                "question_type": q.get("question_type", "mcq"),
+                "options": q.get("options"),  # None for true_false
+                "user_answer": ans_info["user_answer"],
+                "correct_answer": q.get("correct_answer"),
+                "explanation": q.get("explanation", ""),
+                "chapter_number": ans_info["chapter_number"],
+                "chapter_title": ans_info["chapter_title"],
+                "hint": None  # Hints added by analyzer if requested
+            })
+
+    return wrong_answers
+
+
+async def get_completed_chapters_count(
+    user_id: str,
+    course_slug: str
+) -> int:
+    """
+    Get the number of completed chapters for a user on a course.
+
+    Args:
+        user_id: User identifier
+        course_slug: Course slug identifier
+
+    Returns:
+        Number of completed chapters
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return 0
+
+    # Get the course
+    course = await get_course_by_slug(course_slug)
+    if not course:
+        return 0
+
+    normalized_topic = course.get("topic", "").lower().strip()
+    difficulty = course.get("difficulty", "")
+
+    count = await db[PROGRESS_COLLECTION].count_documents({
+        "user_id": user_id,
+        "course_topic": normalized_topic,
+        "difficulty": difficulty,
+        "completed": True
+    })
+
+    return count
+
+
+async def get_course_stats_for_mentor(
+    user_id: str,
+    course_slug: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Get comprehensive course stats for mentor analysis.
+
+    Args:
+        user_id: User identifier
+        course_slug: Course slug identifier
+
+    Returns:
+        Dict with course info, progress stats, and weak areas
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    # Get the course
+    course = await get_course_by_slug(course_slug)
+    if not course:
+        return None
+
+    normalized_topic = course.get("topic", "").lower().strip()
+    difficulty = course.get("difficulty", "")
+
+    # Get all progress for this user/course
+    progress_list = await get_user_progress_for_course(user_id, course_slug)
+
+    # Calculate stats
+    total_chapters = course.get("total_chapters", len(course.get("chapters", [])))
+    completed_chapters = sum(1 for p in progress_list if p.get("completed"))
+    total_correct = sum(p.get("correct_answers", 0) for p in progress_list)
+    total_questions = sum(p.get("total_questions", 0) for p in progress_list)
+    average_score = total_correct / total_questions if total_questions > 0 else 0.0
+
+    # Get wrong answers
+    wrong_answers = await get_wrong_answers_for_course(user_id, course_slug)
+
+    return {
+        "course_slug": course_slug,
+        "course_topic": course.get("original_topic", course.get("topic")),
+        "difficulty": difficulty,
+        "total_chapters": total_chapters,
+        "completed_chapters": completed_chapters,
+        "average_score": average_score,
+        "total_correct": total_correct,
+        "total_questions": total_questions,
+        "total_wrong_answers": len(wrong_answers),
+        "progress_by_chapter": progress_list,
+        "chapters": course.get("chapters", [])
+    }
+
+
+# =============================================================================
+# Gap Quiz Cache Operations
+# =============================================================================
+
+def compute_weak_areas_hash(weak_areas: List[Dict[str, Any]]) -> str:
+    """
+    Create hash from weak area chapters and scores for cache key.
+    Cache invalidates when user's weak areas change.
+
+    Args:
+        weak_areas: List of weak area dicts with chapter_number and score
+
+    Returns:
+        MD5 hash string
+    """
+    # Extract (chapter_number, rounded_score) tuples
+    data = []
+    for wa in weak_areas:
+        ch = wa.get("chapter_number") if isinstance(wa, dict) else wa.chapter_number
+        score = wa.get("score", 0) if isinstance(wa, dict) else wa.score
+        data.append((ch, round(score, 2)))
+
+    # Sort for consistency and hash
+    return hashlib.md5(str(sorted(data)).encode()).hexdigest()
+
+
+async def get_cached_gap_quiz(
+    user_id: str,
+    course_slug: str,
+    weak_areas_hash: str,
+    include_hints: bool
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    Get cached extra questions if hash matches and hints requirement met.
+
+    Args:
+        user_id: User identifier
+        course_slug: Course slug
+        weak_areas_hash: Hash of current weak areas
+        include_hints: Whether hints are needed
+
+    Returns:
+        List of cached questions or None if cache miss
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    query = {
+        "user_id": user_id,
+        "course_slug": course_slug,
+        "weak_areas_hash": weak_areas_hash
+    }
+
+    # If hints are needed, only accept cached with hints
+    if include_hints:
+        query["include_hints"] = True
+
+    cached = await db[GAP_QUIZ_CACHE_COLLECTION].find_one(query)
+
+    if cached:
+        return cached.get("extra_questions", [])
+
+    return None
+
+
+async def save_gap_quiz_cache(
+    user_id: str,
+    course_slug: str,
+    weak_areas_hash: str,
+    extra_questions: List[Dict[str, Any]],
+    include_hints: bool,
+    provider: str
+) -> Optional[str]:
+    """
+    Save AI-generated questions to cache.
+
+    Args:
+        user_id: User identifier
+        course_slug: Course slug
+        weak_areas_hash: Hash of weak areas (cache key)
+        extra_questions: List of question dicts
+        include_hints: Whether hints are included
+        provider: AI provider that generated these
+
+    Returns:
+        Inserted document ID or None
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return None
+
+    # Convert GapQuizQuestion objects to dicts if needed
+    questions_data = []
+    for q in extra_questions:
+        if hasattr(q, 'model_dump'):
+            questions_data.append(q.model_dump())
+        elif isinstance(q, dict):
+            questions_data.append(q)
+
+    document = {
+        "user_id": user_id,
+        "course_slug": course_slug,
+        "weak_areas_hash": weak_areas_hash,
+        "extra_questions": questions_data,
+        "include_hints": include_hints,
+        "provider": provider,
+        "created_at": datetime.utcnow()
+    }
+
+    # Upsert: replace existing cache for same user/course/hash
+    result = await db[GAP_QUIZ_CACHE_COLLECTION].update_one(
+        {
+            "user_id": user_id,
+            "course_slug": course_slug,
+            "weak_areas_hash": weak_areas_hash
+        },
+        {"$set": document},
+        upsert=True
+    )
+
+    return str(result.upserted_id) if result.upserted_id else "updated"
+
+
+async def invalidate_gap_quiz_cache(
+    user_id: str,
+    course_slug: str
+) -> int:
+    """
+    Delete all cached quizzes for a user/course.
+    Called when user explicitly wants fresh generation.
+
+    Args:
+        user_id: User identifier
+        course_slug: Course slug
+
+    Returns:
+        Number of deleted documents
+    """
+    db = MongoDB.get_db()
+    if db is None:
+        return 0
+
+    result = await db[GAP_QUIZ_CACHE_COLLECTION].delete_many({
+        "user_id": user_id,
+        "course_slug": course_slug
+    })
+
+    return result.deleted_count
