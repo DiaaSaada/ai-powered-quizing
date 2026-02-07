@@ -164,13 +164,14 @@ curl http://localhost:8000/health
 - [ ] Prometheus + Grafana for metrics & dashboards (server health, API performance)
 - [ ] Rate limiting
 - [ ] Notifications ("Time to study!" reminders, quick tips to keep users engaged)
-- [ ] Human feedback (thumbs up/down to improve over time)
+- [ ] Human feedback (thumbs up/down course based on how good the quility and coverage)
 - [ ] GitHub Actions (CI/CD pipeline)
 - [ ] Gamification
 - [ ] Community Courses gallery of already generated courses other subscribed users can use without paying for LLM tokens
-- [ ] Vote Up/Down course based on how good the quility and coverage of the quizes 
+quizes 
 - [ ] Bring your own LLM key
- 
+- [ ] Invite studets to already generated course by a teacher and email the teacher when each student submit his final result
+
 
 
 ### Future Features
