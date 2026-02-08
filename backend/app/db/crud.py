@@ -1032,16 +1032,23 @@ async def get_wrong_answers_for_course(
 
     progress_docs = await cursor.to_list(length=100)
 
+    # Consolidate by chapter - keep latest attempt per chapter only
+    chapter_progress = {}
+    for p in progress_docs:
+        chapter_num = p.get("chapter_number")
+        existing = chapter_progress.get(chapter_num)
+        if existing is None or str(p.get("_id", "")) > str(existing.get("_id", "")):
+            chapter_progress[chapter_num] = p
+
     # Build chapter lookup
     chapters_by_number = {
         ch.get("number"): ch for ch in course.get("chapters", [])
     }
 
-    # Collect question IDs for wrong answers
-    wrong_question_ids = []
-    wrong_answers_by_qid = {}  # question_id -> answer info
+    # Collect wrong answers from latest attempt per chapter only
+    wrong_answers_by_qid = {}  # question_id -> answer info (deduplicates automatically)
 
-    for prog in progress_docs:
+    for prog in chapter_progress.values():
         chapter_num = prog.get("chapter_number")
         chapter_title = chapters_by_number.get(chapter_num, {}).get("title", f"Chapter {chapter_num}")
 
@@ -1049,14 +1056,13 @@ async def get_wrong_answers_for_course(
             if not ans.get("is_correct", True):  # Wrong answer
                 qid = ans.get("question_id")
                 if qid:
-                    wrong_question_ids.append(qid)
                     wrong_answers_by_qid[qid] = {
-                        "user_answer": ans.get("user_answer"),
+                        "user_answer": ans.get("selected"),  # Field is 'selected' in AnswerRecord model
                         "chapter_number": chapter_num,
                         "chapter_title": chapter_title
                     }
 
-    if not wrong_question_ids:
+    if not wrong_answers_by_qid:
         return []
 
     # Get questions from the questions collection to get full question details
@@ -1083,8 +1089,8 @@ async def get_wrong_answers_for_course(
 
     # Build wrong answers with full details
     wrong_answers = []
-    for qid in wrong_question_ids:
-        if qid in questions_by_id and qid in wrong_answers_by_qid:
+    for qid in wrong_answers_by_qid:
+        if qid in questions_by_id:
             q = questions_by_id[qid]
             ans_info = wrong_answers_by_qid[qid]
             wrong_answers.append({
@@ -1168,11 +1174,27 @@ async def get_course_stats_for_mentor(
     # Get all progress for this user/course
     progress_list = await get_user_progress_for_course(user_id, course_slug)
 
-    # Calculate stats
+    # Consolidate by chapter_number - keep only the latest attempt per chapter
+    # Progress list is sorted by chapter_number, but we need latest per chapter
+    # MongoDB _id is time-based, so larger _id = more recent
+    chapter_progress = {}
+    for p in progress_list:
+        chapter_num = p.get("chapter_number")
+        existing = chapter_progress.get(chapter_num)
+        if existing is None:
+            chapter_progress[chapter_num] = p
+        else:
+            # Keep the one with larger _id (more recent)
+            if p.get("_id", "") > existing.get("_id", ""):
+                chapter_progress[chapter_num] = p
+
+    consolidated_progress = list(chapter_progress.values())
+
+    # Calculate stats using consolidated progress (one entry per chapter)
     total_chapters = course.get("total_chapters", len(course.get("chapters", [])))
-    completed_chapters = sum(1 for p in progress_list if p.get("completed"))
-    total_correct = sum(p.get("correct_answers", 0) for p in progress_list)
-    total_questions = sum(p.get("total_questions", 0) for p in progress_list)
+    completed_chapters = sum(1 for p in consolidated_progress if p.get("completed"))
+    total_correct = sum(p.get("correct_answers", 0) for p in consolidated_progress)
+    total_questions = sum(p.get("total_questions", 0) for p in consolidated_progress)
     average_score = total_correct / total_questions if total_questions > 0 else 0.0
 
     # Get wrong answers
@@ -1188,7 +1210,7 @@ async def get_course_stats_for_mentor(
         "total_correct": total_correct,
         "total_questions": total_questions,
         "total_wrong_answers": len(wrong_answers),
-        "progress_by_chapter": progress_list,
+        "progress_by_chapter": consolidated_progress,
         "chapters": course.get("chapters", [])
     }
 

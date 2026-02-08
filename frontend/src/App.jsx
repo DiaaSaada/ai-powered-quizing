@@ -11,6 +11,9 @@ import Quiz from './pages/Quiz';
 import QuizResults from './pages/QuizResults';
 import Progress from './pages/Progress';
 import TokenUsage from './pages/TokenUsage';
+import Mentor from './pages/Mentor';
+import GapQuiz from './pages/GapQuiz';
+import GapQuizResults from './pages/GapQuizResults';
 
 function App() {
   return (
@@ -61,6 +64,21 @@ function App() {
           <Route path="/app/token-usage" element={
             <ProtectedRoute>
               <TokenUsage />
+            </ProtectedRoute>
+          } />
+          <Route path="/app/mentor/:courseSlug" element={
+            <ProtectedRoute>
+              <Mentor />
+            </ProtectedRoute>
+          } />
+          <Route path="/app/mentor/:courseSlug/quiz" element={
+            <ProtectedRoute>
+              <GapQuiz />
+            </ProtectedRoute>
+          } />
+          <Route path="/app/mentor/:courseSlug/results" element={
+            <ProtectedRoute>
+              <GapQuizResults />
             </ProtectedRoute>
           } />
         </Routes>

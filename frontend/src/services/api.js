@@ -208,6 +208,38 @@ export const tokenAPI = {
   },
 };
 
+// Mentor endpoints
+export const mentorAPI = {
+  // Check if mentor is available for a course
+  getStatus: async (courseSlug) => {
+    const response = await api.get(`/api/v1/mentor/status?course_slug=${courseSlug}`);
+    return response.data;
+  },
+
+  // Get detailed weak area analysis
+  getAnalysis: async (courseSlug) => {
+    const response = await api.get(`/api/v1/mentor/analysis?course_slug=${courseSlug}`);
+    return response.data;
+  },
+
+  // Generate gap quiz
+  generateQuiz: async (courseSlug, includeHints = false, generateExtra = false, extraCount = 5) => {
+    const response = await api.post('/api/v1/mentor/generate-quiz', {
+      course_slug: courseSlug,
+      include_hints: includeHints,
+      generate_extra: generateExtra,
+      extra_questions_count: extraCount,
+    });
+    return response.data;
+  },
+
+  // Get mentor config
+  getConfig: async () => {
+    const response = await api.get('/api/v1/mentor/config');
+    return response.data;
+  },
+};
+
 // Health check
 export const healthCheck = async () => {
   const response = await api.get('/health');

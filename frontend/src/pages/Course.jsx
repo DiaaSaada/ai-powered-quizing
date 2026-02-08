@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import { courseAPI, progressAPI, questionAPI } from '../services/api';
+import { courseAPI, progressAPI, questionAPI, mentorAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 function Course() {
@@ -11,6 +11,7 @@ function Course() {
   const [course, setCourse] = useState(null);
   const [progress, setProgress] = useState({}); // Map: chapterNumber -> progressData
   const [questionCounts, setQuestionCounts] = useState({}); // Map: chapterNumber -> count
+  const [mentorStatus, setMentorStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -50,6 +51,17 @@ function Course() {
           } catch (countsErr) {
             // Question counts fetch failure is not critical - just log it
             console.warn('Failed to fetch question counts:', countsErr);
+          }
+
+          // Fetch mentor status (if slug available)
+          if (data?.slug) {
+            try {
+              const mentorData = await mentorAPI.getStatus(data.slug);
+              setMentorStatus(mentorData);
+            } catch (mentorErr) {
+              // Mentor status fetch failure is not critical - just log it
+              console.warn('Failed to fetch mentor status:', mentorErr);
+            }
           }
         }
       } catch (err) {
@@ -261,6 +273,57 @@ function Course() {
             );
           })}
         </div>
+
+        {/* Mentor Section */}
+        {mentorStatus?.mentor_available && (
+          <div className="mt-8 p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl border border-purple-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-purple-800">AI Mentor Available</h3>
+                <p className="text-purple-600 text-sm mt-1">
+                  {mentorStatus.weak_areas_count} weak area{mentorStatus.weak_areas_count !== 1 ? 's' : ''} identified
+                  {mentorStatus.total_wrong_answers > 0 && (
+                    <span> • {mentorStatus.total_wrong_answers} question{mentorStatus.total_wrong_answers !== 1 ? 's' : ''} to review</span>
+                  )}
+                </p>
+                <p className="text-purple-500 text-xs mt-1">
+                  Average score: {Math.round(mentorStatus.average_score * 100)}%
+                </p>
+              </div>
+              <button
+                onClick={() => navigate(`/app/mentor/${course.slug}`)}
+                className="px-6 py-3 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                Get Mentor Feedback
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Mentor Not Available Yet */}
+        {mentorStatus && !mentorStatus.mentor_available && (
+          <div className="mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-600">AI Mentor</h3>
+                <p className="text-gray-500 text-sm mt-1">
+                  Complete {mentorStatus.chapters_required - mentorStatus.chapters_completed} more chapter{(mentorStatus.chapters_required - mentorStatus.chapters_completed) !== 1 ? 's' : ''} to unlock mentor feedback
+                </p>
+                <div className="mt-2 w-48 h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-purple-400 transition-all"
+                    style={{ width: `${Math.min(100, (mentorStatus.chapters_completed / mentorStatus.chapters_required) * 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div className="text-gray-400">
+                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer Actions */}
         <div className="mt-8 flex justify-center">
