@@ -195,7 +195,9 @@ class MockAIService(BaseAIService):
         config: CourseConfig,
         content: str = "",
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[Chapter]:
         """
         Generate mock chapters for a given topic.
@@ -206,6 +208,8 @@ class MockAIService(BaseAIService):
             content: Optional document content for content-based generation
             user_id: User ID for token logging (ignored in mock)
             context: Context info (ignored in mock)
+            language: ISO 639-1 language code (ignored in mock, always returns English)
+            language_name: Human-readable language name (ignored in mock)
 
         Returns:
             List of Chapter objects
@@ -791,12 +795,15 @@ You're making progress! Keep it up!"""
         confirmed_sections: List[ConfirmedSection],
         difficulty: str,
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[Chapter]:
         """
         Generate detailed chapters based on user-confirmed outline.
 
         Creates chapters with rich key_ideas for question generation.
+        Language params are ignored in mock (always returns English).
         """
         # Filter to included sections only
         included_sections = [s for s in confirmed_sections if s.include]
@@ -876,7 +883,9 @@ You're making progress! Keep it up!"""
         num_questions: int = 5,
         include_hints: bool = False,
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[GapQuizQuestion]:
         """
         Generate mock extra questions targeting weak areas.
@@ -889,6 +898,8 @@ You're making progress! Keep it up!"""
             include_hints: Whether to include hints
             user_id: User ID for token logging (ignored in mock)
             context: Context info for logging (ignored in mock)
+            language: ISO 639-1 language code (ignored in mock)
+            language_name: Human-readable language name (ignored in mock)
 
         Returns:
             List of GapQuizQuestion objects

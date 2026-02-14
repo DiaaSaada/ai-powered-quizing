@@ -108,11 +108,13 @@ function Course() {
 
   const handleStartQuiz = (chapter) => {
     const chapterNum = chapter.number || 1;
+    console.log('Course language:', course.language, 'Topic:', course.topic);
     navigate(`/app/course/${course.slug}/ch/${chapterNum}/quiz`, {
       state: {
         topic: course.topic,
         difficulty: course.difficulty,
         chapter: chapter,
+        language: course.language || 'en',
       },
     });
   };

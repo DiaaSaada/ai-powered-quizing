@@ -39,13 +39,18 @@ class GenerateCourseRequest(BaseModel):
         default=False,
         description="Skip topic validation (for testing purposes)"
     )
+    language: Optional[str] = Field(
+        default=None,
+        description="Language code (ISO 639-1, e.g., 'en', 'ar'). Auto-detected from topic if not provided."
+    )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "topic": "Project Management",
                 "difficulty": "intermediate",
-                "skip_validation": False
+                "skip_validation": False,
+                "language": None
             }
         }
 
@@ -115,6 +120,7 @@ class GenerateCourseResponse(BaseModel):
     estimated_study_hours: float = Field(..., description="Total estimated study hours")
     time_per_chapter_minutes: int = Field(..., description="Average time per chapter in minutes")
     complexity_score: Optional[int] = Field(default=None, ge=1, le=10, description="Topic complexity score from validation")
+    language: Optional[str] = Field(default=None, description="Content language (ISO 639-1 code, e.g., 'en', 'ar')")
     chapters: List[Chapter] = Field(..., description="List of chapters")
     message: str = Field(default="Course generated successfully", description="Status message")
     config: Optional[CourseConfig] = Field(default=None, description="Course configuration used for generation")
@@ -165,6 +171,7 @@ class GenerateFromFilesResponse(BaseModel):
     estimated_study_hours: float = Field(..., description="Total estimated study hours")
     time_per_chapter_minutes: int = Field(..., description="Average time per chapter in minutes")
     complexity_score: Optional[int] = Field(default=None, ge=1, le=10, description="Topic complexity score")
+    language: Optional[str] = Field(default=None, description="Content language (ISO 639-1 code, e.g., 'en', 'ar')")
     chapters: List[Chapter] = Field(..., description="List of generated chapters")
     message: str = Field(default="Course generated successfully", description="Status message")
     source_files: List[FileUploadResult] = Field(..., description="Results of file processing")

@@ -74,7 +74,9 @@ class BaseAIService(ABC):
         config: CourseConfig,
         content: str = "",
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[Chapter]:
         """
         Generate chapters for a given topic using the provided configuration.
@@ -85,6 +87,8 @@ class BaseAIService(ABC):
             content: Optional document content to analyze
             user_id: User ID for token usage logging
             context: Context info (topic/filenames) for token logging
+            language: ISO 639-1 language code for content generation (e.g., 'en', 'ar')
+            language_name: Human-readable language name for prompts (e.g., 'English', 'Arabic')
 
         Returns:
             List of Chapter objects
@@ -251,7 +255,9 @@ class BaseAIService(ABC):
         confirmed_sections: List[ConfirmedSection],
         difficulty: str,
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[Chapter]:
         """
         Generate detailed chapters based on user-confirmed outline.
@@ -267,6 +273,8 @@ class BaseAIService(ABC):
             difficulty: Course difficulty level
             user_id: User ID for token usage logging
             context: Context info (topic/filenames) for token logging
+            language: ISO 639-1 language code for content generation
+            language_name: Human-readable language name for prompts
 
         Returns:
             List of Chapter objects with key_ideas populated
@@ -282,7 +290,9 @@ class BaseAIService(ABC):
         num_questions: int = 5,
         include_hints: bool = False,
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[GapQuizQuestion]:
         """
         Generate extra AI questions targeting weak areas for gap quiz.
@@ -299,6 +309,8 @@ class BaseAIService(ABC):
             include_hints: Whether to include hints in questions
             user_id: User ID for token usage logging
             context: Context info for token logging
+            language: ISO 639-1 language code for content generation
+            language_name: Human-readable language name for prompts
 
         Returns:
             List of GapQuizQuestion objects targeting weak concepts

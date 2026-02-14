@@ -30,6 +30,7 @@ from app.services.ai_service_factory import AIServiceFactory
 from app.services.topic_validator import get_topic_validator
 from app.services.course_configurator import get_course_configurator
 from app.services.file_parser import get_file_parser
+from app.services.language_detector import get_language_detector
 from app.config import UseCase, settings
 from app.db import crud, user_repository
 
@@ -119,7 +120,17 @@ async def generate_course(
             if validation_result.category:
                 category = validation_result.category.value
         print( "user_id2", current_user.id)
-        # Step 2: Get optimal course configuration
+        # Step 2: Detect language from topic
+        language_detector = get_language_detector()
+        if request.language:
+            # Use provided language
+            detected_lang = request.language
+            lang_name = language_detector.get_language_name(detected_lang)
+        else:
+            # Auto-detect from topic
+            detected_lang, lang_name, _ = language_detector.detect(request.topic)
+
+        # Step 3: Get optimal course configuration
         configurator = get_course_configurator()
         # Use complexity score from validation, default to 5 if not available
         config = configurator.get_config(
@@ -127,24 +138,26 @@ async def generate_course(
             difficulty=request.difficulty
         )
 
-        # Step 3: Get the appropriate AI service and generate chapters
+        # Step 4: Get the appropriate AI service and generate chapters
         ai_service = AIServiceFactory.get_service(
             use_case=UseCase.CHAPTER_GENERATION,
             provider_override=provider
         )
 
-        # Generate chapters with configuration
+        # Generate chapters with configuration and language
         chapters = await ai_service.generate_chapters(
             topic=request.topic,
             config=config,
             user_id=current_user.id,
-            context=request.topic
+            context=request.topic,
+            language=detected_lang,
+            language_name=lang_name
         )
 
         # Determine which provider was actually used
         actual_provider = ai_service.get_provider_name()
 
-        # Step 4: Save course for the authenticated user
+        # Step 5: Save course for the authenticated user
         course_result = await crud.save_course_for_user(
             user_id=current_user.id,
             topic=request.topic,
@@ -152,13 +165,14 @@ async def generate_course(
             complexity_score=complexity_score,
             category=category,
             chapters=chapters,
-            provider=actual_provider
+            provider=actual_provider,
+            language=detected_lang
         )
 
         course_id = course_result["id"] if course_result else None
         course_slug = course_result["slug"] if course_result else None
 
-        # Step 5: Auto-enroll user in the newly created course
+        # Step 6: Auto-enroll user in the newly created course
         await user_repository.enroll_user_in_course(current_user.id, course_id)
 
         # Create enriched response with course ID and slug
@@ -172,6 +186,7 @@ async def generate_course(
             estimated_study_hours=config.estimated_study_hours,
             time_per_chapter_minutes=config.time_per_chapter_minutes,
             complexity_score=complexity_score,
+            language=detected_lang,
             chapters=chapters,
             config=config,
             message=f"Generated {len(chapters)} {request.difficulty}-level chapters for '{request.topic}' using {actual_provider}"
@@ -380,12 +395,18 @@ async def generate_course_from_files(
         # Build context from filenames
         file_context = ", ".join([f.filename for f in parse_result.files if f.success])
 
+        # Detect language from topic or content
+        language_detector = get_language_detector()
+        detected_lang, lang_name, _ = language_detector.detect(inferred_topic)
+
         chapters = await ai_service.generate_chapters(
             topic=inferred_topic,
             config=config,
             content=parse_result.combined_content,
             user_id=current_user.id,
-            context=file_context or inferred_topic
+            context=file_context or inferred_topic,
+            language=detected_lang,
+            language_name=lang_name
         )
 
         actual_provider = ai_service.get_provider_name()
@@ -745,13 +766,19 @@ async def generate_from_confirmed_outline(
         source_files = analysis.get("source_files", [])
         file_context = ", ".join([f.get("filename", "") for f in source_files if f.get("success")])
 
+        # Detect language from topic
+        language_detector = get_language_detector()
+        detected_lang, lang_name, _ = language_detector.detect(topic)
+
         chapters = await ai_service.generate_chapters_from_outline(
             topic=topic,
             content=analysis["raw_content"],
             confirmed_sections=request.confirmed_sections,
             difficulty=request.difficulty,
             user_id=current_user.id,
-            context=file_context or topic
+            context=file_context or topic,
+            language=detected_lang,
+            language_name=lang_name
         )
 
         actual_provider = ai_service.get_provider_name()
@@ -978,6 +1005,7 @@ async def get_course(
         estimated_study_hours=0,  # Not stored in DB
         time_per_chapter_minutes=0,  # Not stored in DB
         complexity_score=course.get("complexity_score"),
+        language=course.get("language"),
         chapters=chapters,
         message="Course retrieved successfully"
     )
@@ -1026,6 +1054,7 @@ async def get_course_by_slug(
         estimated_study_hours=0,  # Not stored in DB
         time_per_chapter_minutes=0,  # Not stored in DB
         complexity_score=course.get("complexity_score"),
+        language=course.get("language"),
         chapters=chapters,
         message="Course retrieved successfully"
     )

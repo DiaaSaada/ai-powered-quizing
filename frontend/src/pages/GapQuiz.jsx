@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useLocation, Link, Navigate, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
+import { getTrueFalseOptions, getTrueFalseLabel } from '../utils/translations';
 
 function GapQuiz() {
   const location = useLocation();
   const navigate = useNavigate();
   const { quiz, analysis, feedbackText, course } = location.state || {};
+  const language = course?.language || 'en';
 
   // Quiz state
   const [questions, setQuestions] = useState([]);
@@ -202,7 +204,11 @@ function GapQuiz() {
           {currentQuestion.source === 'wrong_answer' && currentQuestion.user_previous_answer && !showFeedback && (
             <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
               <p className="text-sm text-orange-700">
-                You previously answered: <strong>{currentQuestion.user_previous_answer}</strong>
+                You previously answered: <strong>
+                  {currentQuestion.type === 'true_false'
+                    ? getTrueFalseLabel(currentQuestion.user_previous_answer, language)
+                    : currentQuestion.user_previous_answer}
+                </strong>
               </p>
             </div>
           )}
@@ -263,16 +269,16 @@ function GapQuiz() {
               })
             ) : (
               // True/False Options
-              ['True', 'False'].map((option) => {
-                const isSelected = selectedAnswer === option;
-                const isCorrect = option === currentQuestion.correct_answer;
+              getTrueFalseOptions(language).map((opt) => {
+                const isSelected = selectedAnswer === opt.value;
+                const isCorrect = opt.value === currentQuestion.correct_answer;
                 const showCorrect = showFeedback && isCorrect;
                 const showIncorrect = showFeedback && isSelected && !isCorrect;
 
                 return (
                   <button
-                    key={option}
-                    onClick={() => handleAnswerSelect(option)}
+                    key={opt.value}
+                    onClick={() => handleAnswerSelect(opt.value)}
                     disabled={showFeedback}
                     className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
                       showCorrect
@@ -296,9 +302,9 @@ function GapQuiz() {
                             : 'bg-gray-100 text-gray-700'
                         }`}
                       >
-                        {option === 'True' ? 'T' : 'F'}
+                        {opt.value === 'True' ? 'T' : 'F'}
                       </span>
-                      <span className="text-gray-700 font-medium">{option}</span>
+                      <span className="text-gray-700 font-medium">{opt.label}</span>
                     </div>
                   </button>
                 );

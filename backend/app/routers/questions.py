@@ -15,6 +15,7 @@ from app.models.question import (
 from app.services.question_analyzer import get_question_analyzer, QuestionCountRecommendation
 from app.services.question_generator import get_question_generator
 from app.services.ai_service_factory import AIServiceFactory
+from app.services.language_detector import get_language_detector
 from app.config import settings, UseCase
 from app.db import crud
 from app.models.user import UserInDB
@@ -262,7 +263,11 @@ async def generate_questions(
         # Step 3: Derive audience from difficulty
         audience = QuestionGenerationConfig.derive_audience(request.difficulty)
 
-        # Step 4: Build config
+        # Step 3.5: Detect language from topic
+        language_detector = get_language_detector()
+        detected_lang, lang_name, _ = language_detector.detect(request.topic)
+
+        # Step 4: Build config with language
         config = QuestionGenerationConfig(
             topic=request.topic,
             difficulty=request.difficulty,
@@ -271,7 +276,9 @@ async def generate_questions(
             chapter_title=request.chapter_title,
             key_concepts=request.key_concepts,
             recommended_mcq_count=mcq_count,
-            recommended_tf_count=tf_count
+            recommended_tf_count=tf_count,
+            language=detected_lang,
+            language_name=lang_name
         )
 
         # Build context for token logging

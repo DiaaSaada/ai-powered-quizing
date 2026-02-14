@@ -128,6 +128,8 @@ class QuestionGenerationConfig(BaseModel):
     key_ideas: List[str] = Field(default_factory=list, description="Specific testable ideas from content")
     recommended_mcq_count: int = Field(default=5, ge=1, le=40, description="Number of MCQ questions to generate")
     recommended_tf_count: int = Field(default=3, ge=1, le=15, description="Number of True/False questions to generate")
+    language: str = Field(default="en", description="Target language for questions (ISO 639-1 code)")
+    language_name: str = Field(default="English", description="Human-readable language name for prompts")
 
     @classmethod
     def derive_audience(cls, difficulty: str) -> str:
@@ -149,7 +151,9 @@ class QuestionGenerationConfig(BaseModel):
                 "chapter_title": "Introduction to Project Management",
                 "key_concepts": ["Project lifecycle", "Stakeholder management", "Resource allocation"],
                 "recommended_mcq_count": 5,
-                "recommended_tf_count": 3
+                "recommended_tf_count": 3,
+                "language": "en",
+                "language_name": "English"
             }
         }
 

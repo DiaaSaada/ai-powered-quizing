@@ -1,10 +1,12 @@
 import { useLocation, Link, Navigate, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
+import { getTrueFalseLabel } from '../utils/translations';
 
 function GapQuizResults() {
   const location = useLocation();
   const navigate = useNavigate();
   const { quiz, questions, answers, analysis, course } = location.state || {};
+  const language = course?.language || 'en';
 
   // Redirect if no data
   if (!questions || !answers) {
@@ -188,7 +190,7 @@ function GapQuizResults() {
                             )}
                         </>
                       ) : (
-                        answer?.selected
+                        getTrueFalseLabel(answer?.selected, language)
                       )}
                     </span>
                   </div>
@@ -207,7 +209,7 @@ function GapQuizResults() {
                             )}
                           </>
                         ) : (
-                          question.correct_answer
+                          getTrueFalseLabel(question.correct_answer, language)
                         )}
                       </span>
                     </div>
@@ -217,7 +219,11 @@ function GapQuizResults() {
                   {question.source === 'wrong_answer' && question.user_previous_answer && (
                     <div className="flex items-start gap-2">
                       <span className="text-gray-500 w-24 flex-shrink-0">Previously:</span>
-                      <span className="text-orange-600">{question.user_previous_answer}</span>
+                      <span className="text-orange-600">
+                        {question.type === 'true_false'
+                          ? getTrueFalseLabel(question.user_previous_answer, language)
+                          : question.user_previous_answer}
+                      </span>
                     </div>
                   )}
 

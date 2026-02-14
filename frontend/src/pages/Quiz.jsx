@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { useLocation, Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { questionAPI } from '../services/api';
 import Header from '../components/Header';
+import { getTrueFalseOptions } from '../utils/translations';
 
 function Quiz() {
   const location = useLocation();
   const navigate = useNavigate();
   const { courseSlug, chapterNumber } = useParams();
-  const { topic, difficulty, chapter } = location.state || {};
+  const { topic, difficulty, chapter, language = 'en' } = location.state || {};
 
   // Quiz state
   const [questions, setQuestions] = useState([]);
@@ -112,6 +113,7 @@ function Quiz() {
           chapter,
           questions,
           courseSlug,
+          language,
           answers: {
             ...answers,
             [currentIndex]: {
@@ -254,16 +256,16 @@ function Quiz() {
               })
             ) : (
               // True/False Options
-              ['True', 'False'].map((option) => {
-                const isSelected = selectedAnswer === option;
-                const isCorrect = option === currentQuestion.correct_answer;
+              getTrueFalseOptions(language).map((opt) => {
+                const isSelected = selectedAnswer === opt.value;
+                const isCorrect = opt.value === currentQuestion.correct_answer;
                 const showCorrect = showFeedback && isCorrect;
                 const showIncorrect = showFeedback && isSelected && !isCorrect;
 
                 return (
                   <button
-                    key={option}
-                    onClick={() => handleAnswerSelect(option)}
+                    key={opt.value}
+                    onClick={() => handleAnswerSelect(opt.value)}
                     disabled={showFeedback}
                     className={`w-full text-left p-4 rounded-lg border-2 transition-all ${showCorrect
                         ? 'border-green-500 bg-green-50'
@@ -283,9 +285,9 @@ function Quiz() {
                               ? 'bg-blue-500 text-white'
                               : 'bg-gray-100 text-gray-700'
                         }`}>
-                        {option === 'True' ? 'T' : 'F'}
+                        {opt.value === 'True' ? 'T' : 'F'}
                       </span>
-                      <span className="text-gray-700 font-medium">{option}</span>
+                      <span className="text-gray-700 font-medium">{opt.label}</span>
                     </div>
                   </button>
                 );

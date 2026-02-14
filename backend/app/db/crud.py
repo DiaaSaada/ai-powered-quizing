@@ -9,6 +9,7 @@ from bson import ObjectId
 from app.db.connection import MongoDB
 from app.db.models import CourseDocument, QuestionDocument, UserProgressDocument
 from app.models.course import Chapter, generate_course_slug
+from app.services.language_detector import get_language_detector
 
 
 # Collection names
@@ -16,6 +17,28 @@ COURSES_COLLECTION = "courses"
 QUESTIONS_COLLECTION = "questions"
 PROGRESS_COLLECTION = "user_progress"
 GAP_QUIZ_CACHE_COLLECTION = "gap_quiz_cache"
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def _ensure_course_language(course: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ensure course has a language field. Detects from topic if missing.
+    """
+    if course and not course.get("language"):
+        topic = course.get("original_topic") or course.get("topic", "")
+        if topic:
+            try:
+                detector = get_language_detector()
+                lang_code, _, _ = detector.detect(topic)
+                course["language"] = lang_code
+            except Exception:
+                course["language"] = "en"
+        else:
+            course["language"] = "en"
+    return course
 
 
 # =============================================================================
@@ -156,7 +179,8 @@ async def save_course_for_user(
     complexity_score: Optional[int],
     category: Optional[str],
     chapters: List[Chapter],
-    provider: str
+    provider: str,
+    language: str = "en"
 ) -> Optional[Dict[str, str]]:
     """
     Save a course linked to a user.
@@ -169,6 +193,7 @@ async def save_course_for_user(
         category: Topic category (official_certification, college_course, etc.)
         chapters: List of Chapter objects
         provider: AI provider used
+        language: ISO 639-1 language code (e.g., 'en', 'ar')
 
     Returns:
         Dict with 'id' and 'slug', or None if DB not connected
@@ -191,6 +216,7 @@ async def save_course_for_user(
         "difficulty": difficulty,
         "complexity_score": complexity_score,
         "category": category,
+        "language": language,
         "chapters": chapters_data,
         "total_chapters": len(chapters),
         "provider": provider,
@@ -210,7 +236,8 @@ async def save_course_from_files(
     category: Optional[str],
     chapters: List[Chapter],
     provider: str,
-    source_files: List[Dict[str, Any]]
+    source_files: List[Dict[str, Any]],
+    language: str = "en"
 ) -> Optional[Dict[str, str]]:
     """
     Save a course generated from uploaded files.
@@ -224,6 +251,7 @@ async def save_course_from_files(
         chapters: List of Chapter objects
         provider: AI provider used
         source_files: List of file metadata dicts
+        language: ISO 639-1 language code (e.g., 'en', 'ar')
 
     Returns:
         Dict with 'id' and 'slug', or None if DB not connected
@@ -246,6 +274,7 @@ async def save_course_from_files(
         "difficulty": difficulty,
         "complexity_score": complexity_score,
         "category": category,
+        "language": language,
         "chapters": chapters_data,
         "total_chapters": len(chapters),
         "provider": provider,
@@ -276,9 +305,10 @@ async def get_courses_by_user(user_id: str) -> List[Dict[str, Any]]:
     cursor = db[COURSES_COLLECTION].find({"user_id": user_id}).sort("created_at", -1)
     courses = await cursor.to_list(length=100)
 
-    # Add string id field for each course
+    # Add string id field and ensure language for each course
     for course in courses:
         course["id"] = str(course["_id"])
+        _ensure_course_language(course)
 
     return courses
 
@@ -301,6 +331,7 @@ async def get_course_by_id(course_id: str) -> Optional[Dict[str, Any]]:
         course = await db[COURSES_COLLECTION].find_one({"_id": ObjectId(course_id)})
         if course:
             course["id"] = str(course["_id"])
+            _ensure_course_language(course)
         return course
     except Exception:
         return None
@@ -324,6 +355,7 @@ async def get_course_by_slug(slug: str) -> Optional[Dict[str, Any]]:
         course = await db[COURSES_COLLECTION].find_one({"slug": slug})
         if course:
             course["id"] = str(course["_id"])
+            _ensure_course_language(course)
         return course
     except Exception:
         return None

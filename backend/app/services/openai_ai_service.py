@@ -55,7 +55,9 @@ class OpenAIService(BaseAIService):
         config: CourseConfig,
         content: str = "",
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[Chapter]:
         """
         Generate chapters using OpenAI GPT.
@@ -66,6 +68,8 @@ class OpenAIService(BaseAIService):
             content: Optional document content to analyze
             user_id: User ID for token usage logging
             context: Context info (topic/filenames) for token logging
+            language: ISO 639-1 language code for content generation
+            language_name: Human-readable language name for prompts
 
         Returns:
             List of Chapter objects
@@ -92,9 +96,21 @@ class OpenAIService(BaseAIService):
         }
         diff_guidance = difficulty_guidance.get(difficulty, difficulty_guidance["intermediate"])
 
+        # Build language instruction for non-English content
+        language_instruction = ""
+        if language != "en":
+            language_instruction = f"""
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL content MUST be written in {language_name}
+- This includes: chapter titles, summaries, key concepts, explanations
+- Do NOT mix languages - use ONLY {language_name} throughout
+- Technical terms may remain in their original form if commonly used that way
+
+"""
+
         # Build the prompt
         if content:
-            prompt = f"""You are an expert curriculum designer creating a {difficulty}-level course.
+            prompt = f"""{language_instruction}You are an expert curriculum designer creating a {difficulty}-level course.
 
 Topic: {topic}
 Required chapters: exactly {num_chapters}
@@ -142,7 +158,7 @@ Return ONLY valid JSON:
   ]
 }}"""
         else:
-            prompt = f"""You are an expert curriculum designer creating a {difficulty}-level course.
+            prompt = f"""{language_instruction}You are an expert curriculum designer creating a {difficulty}-level course.
 
 Topic: {topic}
 Required chapters: exactly {num_chapters}
@@ -313,7 +329,19 @@ Return ONLY valid JSON:
         else:
             length_guidance = "Questions should be MODERATE length (2-4 lines). Balance clarity with depth."
 
-        prompt = f"""Create questions for this chapter from a {config.difficulty} course on {config.topic}.
+        # Build language instruction for non-English content
+        language_instruction = ""
+        if config.language != "en":
+            language_instruction = f"""
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL questions MUST be written in {config.language_name}
+- ALL answer options MUST be in {config.language_name}
+- ALL explanations MUST be in {config.language_name}
+- Do NOT mix languages - use ONLY {config.language_name} throughout
+
+"""
+
+        prompt = f"""{language_instruction}Create questions for this chapter from a {config.difficulty} course on {config.topic}.
 
 Chapter {config.chapter_number}: {config.chapter_title}
 Key Concepts to Cover: {key_concepts_str}
@@ -713,7 +741,9 @@ Return valid JSON with this structure:
         confirmed_sections: List[ConfirmedSection],
         difficulty: str,
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[Chapter]:
         """
         Generate detailed chapters based on user-confirmed outline using OpenAI GPT.
@@ -726,6 +756,8 @@ Return valid JSON with this structure:
             difficulty: Course difficulty level
             user_id: User ID for token usage logging
             context: Context info (topic/filenames) for token logging
+            language: ISO 639-1 language code for content generation
+            language_name: Human-readable language name for prompts
 
         Returns:
             List of Chapter objects with key_ideas populated
@@ -751,7 +783,9 @@ Return valid JSON with this structure:
                 difficulty=difficulty,
                 start_number=batch_start + 1,
                 user_id=user_id,
-                context=context
+                context=context,
+                language=language,
+                language_name=language_name
             )
             all_chapters.extend(batch_chapters)
 
@@ -765,7 +799,9 @@ Return valid JSON with this structure:
         difficulty: str,
         start_number: int,
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[Chapter]:
         """
         Generate a batch of chapters (max 5 at a time) to stay within token limits.
@@ -778,6 +814,8 @@ Return valid JSON with this structure:
             start_number: Starting chapter number for this batch
             user_id: User ID for token usage logging
             context: Context info (topic/filenames) for token logging
+            language: ISO 639-1 language code for content generation
+            language_name: Human-readable language name for prompts
 
         Returns:
             List of Chapter objects for this batch
@@ -800,8 +838,20 @@ Return valid JSON with this structure:
         time_map = {"beginner": 25, "intermediate": 45, "advanced": 90}
         time_per_chapter = time_map.get(difficulty, 45)
 
+        # Build language instruction for non-English content
+        language_instruction = ""
+        if language != "en":
+            language_instruction = f"""
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL content MUST be written in {language_name}
+- This includes: chapter titles, summaries, key concepts, key ideas, explanations
+- Do NOT mix languages - use ONLY {language_name} throughout
+- Technical terms may remain in their original form if commonly used that way
+
+"""
+
         end_number = start_number + len(sections) - 1
-        prompt = f"""Create detailed chapter content for chapters {start_number} to {end_number} of this {difficulty}-level course.
+        prompt = f"""{language_instruction}Create detailed chapter content for chapters {start_number} to {end_number} of this {difficulty}-level course.
 
 TOPIC: {topic}
 
@@ -879,7 +929,9 @@ Return valid JSON:
         num_questions: int = 5,
         include_hints: bool = False,
         user_id: Optional[str] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        language: str = "en",
+        language_name: str = "English"
     ) -> List[GapQuizQuestion]:
         """
         Generate extra AI questions targeting weak areas for gap quiz.
@@ -892,6 +944,8 @@ Return valid JSON:
             include_hints: Whether to include hints
             user_id: User ID for token logging
             context: Context info for logging
+            language: ISO 639-1 language code for content generation
+            language_name: Human-readable language name for prompts
 
         Returns:
             List of GapQuizQuestion objects targeting weak concepts
@@ -909,7 +963,19 @@ Return valid JSON:
 
         hint_field = '"hint": "Helpful hint...",' if include_hints else ''
 
-        prompt = f"""You are an expert exam creator generating remedial questions to help a student improve.
+        # Build language instruction for non-English content
+        language_instruction = ""
+        if language != "en":
+            language_instruction = f"""
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL questions MUST be written in {language_name}
+- ALL answer options MUST be in {language_name}
+- ALL explanations and hints MUST be in {language_name}
+- Do NOT mix languages - use ONLY {language_name} throughout
+
+"""
+
+        prompt = f"""{language_instruction}You are an expert exam creator generating remedial questions to help a student improve.
 
 COURSE: {course_topic} ({difficulty} level)
 

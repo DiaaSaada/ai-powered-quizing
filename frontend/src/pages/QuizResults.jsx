@@ -3,12 +3,13 @@ import { useLocation, Link, Navigate, useParams } from 'react-router-dom';
 import { progressAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import Header from '../components/Header';
+import { getTrueFalseLabel } from '../utils/translations';
 
 function QuizResults() {
   const location = useLocation();
   const { courseSlug, chapterNumber } = useParams();
   const { user } = useAuth();
-  const { topic, difficulty, chapter, questions, answers } = location.state || {};
+  const { topic, difficulty, chapter, questions, answers, language = 'en' } = location.state || {};
 
   // Save status
   const [saveStatus, setSaveStatus] = useState('pending'); // pending, saving, saved, error
@@ -158,7 +159,7 @@ function QuizResults() {
                           )}
                         </>
                       ) : (
-                        answer?.selected
+                        getTrueFalseLabel(answer?.selected, language)
                       )}
                     </span>
                   </div>
@@ -177,7 +178,7 @@ function QuizResults() {
                             )}
                           </>
                         ) : (
-                          question.correct_answer
+                          getTrueFalseLabel(question.correct_answer, language)
                         )}
                       </span>
                     </div>
@@ -199,7 +200,7 @@ function QuizResults() {
         <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
           <Link
             to={`/app/course/${courseSlug}/ch/${chapterNumber}/quiz`}
-            state={{ topic, difficulty, chapter }}
+            state={{ topic, difficulty, chapter, language }}
             className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-center"
           >
             Try Again

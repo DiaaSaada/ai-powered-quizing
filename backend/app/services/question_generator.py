@@ -112,7 +112,20 @@ KEY IDEAS TO COVER (REQUIRED - generate at least 1 question per idea):
 COVERAGE REQUIREMENT: Ensure at least 80% of the key ideas above are tested.
 Each key idea should have 2-3 questions testing different aspects."""
 
-        prompt = f"""You are an expert exam creator designing questions for {config.audience}.
+        # Build language instruction for non-English content
+        language_instruction = ""
+        if hasattr(config, 'language') and config.language != "en":
+            lang_name = getattr(config, 'language_name', config.language)
+            language_instruction = f"""
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL questions MUST be written in {lang_name}
+- ALL answer options MUST be in {lang_name}
+- ALL explanations MUST be in {lang_name}
+- Do NOT mix languages - use ONLY {lang_name} throughout
+
+"""
+
+        prompt = f"""{language_instruction}You are an expert exam creator designing questions for {config.audience}.
 
 Create questions for this chapter from a {config.difficulty} course on {config.topic}.
 
@@ -514,7 +527,20 @@ Return this exact JSON structure:
         else:
             length_guidance = "Questions should be MODERATE length (2-4 lines). Balance clarity with depth."
 
-        prompt = f"""You are an expert exam creator designing questions for {config.audience}.
+        # Build language instruction for non-English content
+        language_instruction = ""
+        if hasattr(config, 'language') and config.language != "en":
+            lang_name = getattr(config, 'language_name', config.language)
+            language_instruction = f"""
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL questions MUST be written in {lang_name}
+- ALL answer options MUST be in {lang_name}
+- ALL explanations MUST be in {lang_name}
+- Do NOT mix languages - use ONLY {lang_name} throughout
+
+"""
+
+        prompt = f"""{language_instruction}You are an expert exam creator designing questions for {config.audience}.
 
 Create questions about the concept "{concept}" from Chapter {config.chapter_number}: {config.chapter_title} of a {config.difficulty} course on {config.topic}.
 
